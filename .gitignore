@@ -1,0 +1,9 @@
+*.env
+**/cache
+*.cache
+**/logs
+*.log
+*History
+**/build
+**/dist
+**/__pycache__
