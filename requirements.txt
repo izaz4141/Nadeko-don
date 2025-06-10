@@ -1,0 +1,14 @@
+altgraph
+certifi
+charset-normalizer
+idna
+pyinstaller
+pyinstaller-hooks-contrib
+PySide6
+PySide6_Addons
+PySide6_Essentials
+requests
+setuptools
+shiboken6
+urllib3
+yt-dlp
