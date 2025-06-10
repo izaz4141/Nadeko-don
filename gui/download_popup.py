@@ -18,6 +18,7 @@ import requests, os
 class DownloadPopup(QDialog):
     def __init__(self, parent, url):
         super(DownloadPopup, self).__init__(parent)
+        self.setWindowTitle("Nadeko~don: Download Popup")
         self.main_window = parent
         self.url = url
         self.thumbnail_thread = None
@@ -127,7 +128,7 @@ class DownloadPopup(QDialog):
              f"{format_bytes(f.get('filesize') or f.get('filesize_approx') or 0)}",
               (f.get('filesize') or f.get('filesize_approx') or 0)
             ]
-            for f in formats
+            for f in reversed(formats)
             if not f.get('vcodec') in ['audio only', 'none']
         ]
 
@@ -138,7 +139,7 @@ class DownloadPopup(QDialog):
              f"{format_bytes(f.get('filesize') or f.get('filesize_approx') or 0)}",
              (f.get('filesize') or f.get('filesize_approx') or 0) 
             ]
-            for f in formats
+            for f in reversed(formats)
             if f.get('resolution') == 'audio only'
         ]
 

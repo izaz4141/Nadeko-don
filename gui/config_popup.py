@@ -13,6 +13,7 @@ class ConfigPopup(QDialog):
     workers_changed = Signal()
     def __init__(self, parent):
         super(ConfigPopup, self).__init__(parent)
+        self.setWindowTitle("Nadeko~don: Configuration Popup")
         self.main_window = parent
         self.saveDir = parent.config['save_path']
         self.ytCookies = parent.config['yt_cookies']
