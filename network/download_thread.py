@@ -498,7 +498,6 @@ class DownloadTask(QObject):
     def _monitor_ffmpeg_process(self, process, save_path):
         while True:
             line = process.stdout.readline()
-            print(line)
             if not line and process.poll() is not None:
                 break
                 
