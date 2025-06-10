@@ -467,8 +467,7 @@ class DownloadTask(QObject):
     def _download_hls_stream(self, url, save_path):
         if os.path.exists(save_path):
             os.remove(save_path)
-        
-        ext = os.path.splitext(save_path)[1][1:]  # Remove dot from extension
+        ext = os.path.splitext(self.save_path)[1].split('.')[1]
         cmd = self._build_ffmpeg_command(url, save_path, ext)
         
         process = subprocess.Popen(
@@ -499,6 +498,7 @@ class DownloadTask(QObject):
     def _monitor_ffmpeg_process(self, process, save_path):
         while True:
             line = process.stdout.readline()
+            print(line)
             if not line and process.poll() is not None:
                 break
                 
@@ -511,10 +511,11 @@ class DownloadTask(QObject):
         line = line.strip()
         try:
             size, unit = extract_size_info(line)
-            size_val = self._convert_to_bytes(size, unit)
-            with QMutexLocker(self.mutex):
-                self.downloaded = size_val
-                self.history.append((time.time(), size_val))
+            if size and unit:
+                size_val = self._convert_to_bytes(size, unit)
+                with QMutexLocker(self.mutex):
+                    self.downloaded = size_val
+                    self.history.append((time.time(), size_val))
         except (ValueError, TypeError):
             pass
 
