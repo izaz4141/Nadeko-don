@@ -39,7 +39,7 @@ git clone https://github.com/izaz4141/Nadeko-don.git
 cd Nadeko-don
 
 # Install Python dependencies
-pip install pyinstaller pyinstaller-hooks-contrib pyside requests
+pip install -r requirements.txt
 
 # Build executable
 pyinstaller build.spec
