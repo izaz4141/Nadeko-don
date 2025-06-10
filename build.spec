@@ -34,7 +34,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='Nadeko~don',
+    name='nadeko-don',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
