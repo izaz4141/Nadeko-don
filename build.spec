@@ -1,13 +1,20 @@
 # build.spec
+import os, sys
+
+platform_binaries = []
+if sys.platform.startswith('linux'):
+    # Paths specific to Linux Qt6 installations
+    platform_binaries.extend([
+        ('/usr/lib/qt6/plugins/platformthemes', 'plugins/platformthemes'),
+        ('/usr/lib/qt6/plugins/styles', 'plugins/styles'),
+    ])
+
 block_cipher = None
 
 a = Analysis(
     ['main.py'],
     pathex=[os.getcwd()],
-    binaries=[
-        ('/usr/lib/qt6/plugins/platformthemes', 'plugins/platformthemes'),
-        ('/usr/lib/qt6/plugins/styles', 'plugins/styles'),
-    ],
+    binaries=platform_binaries,
     datas=[
         ('assets/*', 'assets'),
         ('gui/*.py', 'gui'),
