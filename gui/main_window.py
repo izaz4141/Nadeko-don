@@ -241,7 +241,7 @@ class MainWindow(QMainWindow):
             return
 
         self.popup = DownloadPopup(self, url)
-        # Note: The download button enabling is handled by the popup itself based on info fetched
+        self.popup.show()
 
     def handle_error(self, message):
         """Central error handler for issues encountered during download or info fetching."""

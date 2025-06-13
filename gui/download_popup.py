@@ -32,8 +32,6 @@ class DownloadPopup(QDialog):
         self.urlInfo = InfoFetcher(url)
         self.urlInfo.infoReady.connect(self.get_urlInfo)
         self.urlInfo.start()
-        
-        self.show()
 
     def init_ui(self):
         main_layout = QVBoxLayout()
