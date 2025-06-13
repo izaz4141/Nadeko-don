@@ -9,6 +9,7 @@ class YTDL_Thread(QThread):
 
     def __init__(self, main_window, url, format_code=None):
         super().__init__()
+        self.setObjectName("YDLThread")
         self.main_window = main_window
         self.url = url
         self.download_dir = main_window.config['save_path']
@@ -32,8 +33,8 @@ class YTDL_Thread(QThread):
                 with yt_dlp.YoutubeDL(self.ytdl_opts) as ydl:
                     info = ydl.extract_info(self.url, download=False)
                     info = ydl.sanitize_info(info)
-                # with open("info.log", "w") as out_file:
-                #     json.dump(info, out_file, indent=4)
+                with open(f"{self.main_window.config_dir}/info.log", "w") as out_file:
+                    json.dump(info, out_file, indent=4)
                 self.info_ready.emit(info)
                 return
 

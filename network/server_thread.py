@@ -11,6 +11,7 @@ class ServerThread(QThread):
 
     def __init__(self, port=12345):
         super().__init__()
+        self.setObjectName("ServerThread")
         self.port = port
         self.server = None
 

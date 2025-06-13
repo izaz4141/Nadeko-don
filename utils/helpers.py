@@ -146,17 +146,41 @@ def is_urlDownloadable(url):
 
 def pre_allocate_file(filepath, size):
     """
-    Pre-allocates a file to a given size. Creates parent directories if they don't exist.
+    Pre-allocates a file to a given size, preserving existing content.
+    Creates parent directories if they don't exist.
     Uses `posix_fallocate` on POSIX systems for efficiency, falls back to sparse file creation.
     """
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    
+    # Open in 'r+b' to preserve existing content if file exists.
+    # Open in 'w+b' to create a new file if it doesn't exist.
+    mode = 'r+b' if os.path.exists(filepath) else 'w+b'
+    
     try:
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with open(filepath, 'wb') as f:
-            if hasattr(os, 'posix_fallocate'):
-                os.posix_fallocate(f.fileno(), 0, size)
-            else:
-                f.seek(size - 1)
-                f.write(b'\0')
+        with open(filepath, mode) as f:
+            # Move to the end of the file to get its actual current size
+            f.seek(0, os.SEEK_END) 
+            current_file_size = f.tell()
+
+            # Only pre-allocate if the current size is less than the desired total size
+            if current_file_size < size:
+                if hasattr(os, 'posix_fallocate'):
+                    # posix_fallocate(fd, offset, len)
+                    # Allocate space from the current end of the file up to the desired total size.
+                    os.posix_fallocate(f.fileno(), current_file_size, size - current_file_size)
+                else:
+                    # Fallback for systems without posix_fallocate (sparse file creation)
+                    f.seek(size - 1) # Move to the byte just before the desired size
+                    f.write(b'\0') # Write a null byte to extend the file
+                    f.flush() # Ensure the write is flushed to disk
+            # If current_file_size >= size, no allocation is needed.
     except Exception as e:
-        # If pre-allocation fails (e.g., no space, or permission), still ensure file exists
-        open(filepath, 'wb').close()
+        print(f"Warning: Pre-allocation failed for {filepath}: {e}")
+        # If pre-allocation fails, ensure the file exists, but don't overwrite.
+        # This fallback is primarily for ensuring the file handle can be used later.
+        if not os.path.exists(filepath):
+            try:
+                # Use 'a' mode (append) to create if not exists, and not truncate.
+                open(filepath, 'a').close()
+            except Exception as e_fallback:
+                print(f"Error ensuring file exists after pre-allocation failure: {e_fallback}")

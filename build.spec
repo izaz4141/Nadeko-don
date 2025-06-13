@@ -4,7 +4,10 @@ block_cipher = None
 a = Analysis(
     ['main.py'],
     pathex=[os.getcwd()],
-    binaries=[],
+    binaries=[
+        ('/usr/lib/qt6/plugins/platformthemes', 'plugins/platformthemes'),
+        ('/usr/lib/qt6/plugins/styles', 'plugins/styles'),
+    ],
     datas=[
         ('assets/*', 'assets'),
         ('gui/*.py', 'gui'),
@@ -12,14 +15,21 @@ a = Analysis(
         ('utils/*.py', 'utils'),
     ],
     hiddenimports=[
-        'network', 
+        'network',
         'utils',
         'gui'
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        "tkinter", "unittest", "pydoc",
+        "setuptools", "distutils", "test", "tomllib",
+        "multiprocessing", "pkg_resources",
+        "xmlrpc", "lib2to3", "sqlite3",
+        "matplotlib", "scipy", "numpy", "pandas", "PIL", "torch", "tensorflow", "cv2",
+        "cryptography"
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
