@@ -1,42 +1,29 @@
-import sys, argparse
+import sys, os
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMessageBox
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
+
 from gui.main_window import MainWindow
+from utils.helpers import resource_path
 
 APP_NAME = "Nadeko~don"
-__version__ = "2.0.0"
-
-def parse_arguments():
-    """Parses command-line arguments for the application."""
-    parser = argparse.ArgumentParser(
-        prog=APP_NAME,
-        description=f"{APP_NAME} - Version {__version__}"
-    )
-    parser.add_argument(
-        '-v', '--version',
-        action='version',
-        version=f'%(prog)s {__version__}',
-        help="Show application's version number and exit."
-    )
-    # You can add more arguments here if needed in the future
-    return parser.parse_args()
+__version__ = "2.1.0"
 
 
 if __name__ == "__main__":
-    args = parse_arguments()
-
-
     if hasattr(sys, '_MEIPASS'):
         plugin_path = os.path.join(sys._MEIPASS, 'plugins')
         os.environ['QT_PLUGIN_PATH'] = plugin_path
+        os.environ['QT_LOGGING_RULES'] = "qt.qpa.wayland.*.warning=false"
 
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)
+    app.setWindowIcon(QIcon(resource_path("assets/nadeko-don.png")))
 
     socket = QLocalSocket()
     socket.connectToServer(APP_NAME)
-    if socket.waitForConnected(5000):
+    if socket.waitForConnected(500):
         QMessageBox.warning(None, "Application Already Running",
                             "Another instance of this application is already running.\n"
                             "Please check your system tray or taskbar.")
@@ -44,11 +31,29 @@ if __name__ == "__main__":
     else:
         server = QLocalServer()
         if not server.listen(APP_NAME):
-            # Fallback if listen fails (e.g., server name already in use by a zombie process)
-            QMessageBox.critical(None, "Error",
-                                 "Could not start the application server. "
-                                 "Please ensure no other instance is running and try again.")
-            sys.exit(1)
+            if sys.platform != "win32":
+                QMessageBox.information(None, "Cleanup",
+                                        "Found a stale server instance. Attempting to clean up and restart.")
+                try:
+                    QLocalServer.removeServer(APP_NAME)
+                    # Try listening again after removal
+                    if not server.listen(APP_NAME):
+                        QMessageBox.critical(None, "Error",
+                                             "Could not restart the application server after cleanup. "
+                                             "Please ensure no other instance is running and try again.")
+                        sys.exit(1)
+                except Exception as e:
+                    QMessageBox.critical(None, "Error",
+                                         f"Failed to remove stale server: {e}\n"
+                                         "Please restart your computer or manually delete the server file if on Linux/macOS.")
+                    sys.exit(1)
+            else:
+                # Generic error if not a known stale server issue or on Windows
+                QMessageBox.critical(None, "Error",
+                                     "Could not start the application server. "
+                                     "Please ensure no other instance is running and try again. Error: " +
+                                     server.errorString())
+                sys.exit(1)
         # Make sure the server cleans up when the app exits
         app.aboutToQuit.connect(server.close)
 
