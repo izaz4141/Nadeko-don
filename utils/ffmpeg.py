@@ -1,3 +1,5 @@
+import os, subprocess
+
 def check_ffmpeg_in_path():
     """
     Checks if the 'ffmpeg' executable is available in the system's PATH.
