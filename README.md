@@ -47,13 +47,8 @@ pyinstaller build.spec
 
 ## Development Roadmap
 
-### High Priority
 1. Enhanced UI/UX with professional styling and dark/light themes
-2. Browser extension communication protocol implementation
+2. Automatic update mechanism
 3. Download progress visualization and analytics
-
-## Planned Enhancements
-1. Dynamic download part configuration during transfers
-2. Download scheduling and queue management
-3. Multiple downloads at once support
-4. Automatic update mechanism
+4. Dynamic download part configuration during transfers
+5. Download scheduling and queue management
