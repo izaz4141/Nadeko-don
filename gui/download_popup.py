@@ -1,13 +1,13 @@
 from PySide6.QtCore import Qt, Slot, QThread, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QWidget, QVBoxLayout, QHBoxLayout,
     QComboBox, QPushButton, QLabel, QDialog, QLineEdit,
     QFrame, QFileDialog, QMessageBox
 )
 
 from utils.helpers import (
-    format_durasi, get_url_info, 
+    get_url_info,
     is_urlDownloadable, format_bytes
 )
 from network.ydl_thread import YTDL_Thread
@@ -26,9 +26,9 @@ class DownloadPopup(QDialog):
         self.ytdl_thread = None
         self.info = None # Stores the YTDL info dictionary
         self.download_request = None # Stores the prepared download request for DownloadManager
-        
+
         self.init_ui()
-        
+
         self.urlInfo = InfoFetcher(url)
         self.urlInfo.infoReady.connect(self.get_urlInfo)
         self.urlInfo.start()
@@ -121,7 +121,7 @@ class DownloadPopup(QDialog):
         Populates thumbnail, filename, and stream selection dropdowns.
         """
         self.info = info # Store the full info dictionary
-        
+
         # Load thumbnail if available, otherwise display message
         if self.info.get('thumbnail'):
             self.load_thumbnail(self.info['thumbnail'])
@@ -131,9 +131,9 @@ class DownloadPopup(QDialog):
         # Clear existing items in combo boxes
         self.audio_select.clear()
         self.video_select.clear()
-        
+
         formats = self.info.get('formats', [])
-        
+
         # Filter and sort video formats
         self.video_formats = []
         for f in reversed(formats):
@@ -164,7 +164,7 @@ class DownloadPopup(QDialog):
         # Add "None" options for user flexibility
         self.video_formats.append([None, "None (No video)", 0])
         self.audio_formats.append([None, "None (No audio)", 0])
-        
+
         for url, desc, _ in self.video_formats:
             self.video_select.addItem(desc, url)
         for url, desc, _ in self.audio_formats:
@@ -190,13 +190,13 @@ class DownloadPopup(QDialog):
         """Updates the displayed filesize and suggested filename based on selected streams."""
         selected_video_url = self.video_select.currentData()
         selected_audio_url = self.audio_select.currentData()
-        
+
         video_size = self.video_formats[self.video_select.currentIndex()][2] if selected_video_url else 0
         audio_size = self.audio_formats[self.audio_select.currentIndex()][2] if selected_audio_url else 0
-        
+
         total_size = video_size + audio_size
-        
-        if total_size > 0: 
+
+        if total_size > 0:
             self.filesize.setText(format_bytes(total_size))
         else:
             self.filesize.setText('Unknown Sizes')
@@ -215,7 +215,7 @@ class DownloadPopup(QDialog):
 
         # Enable download button if at least one stream is selected
         self.download_button.setEnabled(True)
-        
+
         # Update filename, preserving the base title
         base_title = self.info.get('title', 'untitled') if self.ytdl else os.path.splitext(self.save_input.text())[0]
         self.save_input.setText(f"{base_title}.{current_ext}")
@@ -229,15 +229,15 @@ class DownloadPopup(QDialog):
         msg_box.setText(f"File '{os.path.basename(file_path)}' already exists.")
         msg_box.setInformativeText("Do you want to resume the download, overwrite it, or cancel?")
         msg_box.setIcon(QMessageBox.Question)
-        
+
         resume_button = msg_box.addButton("Resume", QMessageBox.AcceptRole)
         overwrite_button = msg_box.addButton("Overwrite", QMessageBox.DestructiveRole)
         cancel_button = msg_box.addButton("Cancel", QMessageBox.RejectRole)
-        
+
         msg_box.setDefaultButton(resume_button)
-        
+
         msg_box.exec()
-        
+
         if msg_box.clickedButton() == resume_button:
             return "resume"
         elif msg_box.clickedButton() == overwrite_button:
@@ -290,7 +290,7 @@ class DownloadPopup(QDialog):
             self.ytdl_thread.info_ready.connect(self.handle_ytdl_video_info)
             self.ytdl_thread.error.connect(self.main_window.handle_error) # Connect to main window's error handler
             self.ytdl_thread.start()
-            
+
             # Show YTDL specific UI elements
             self.thumbnail_frame.setVisible(True)
             self.videoWidget.setVisible(True)
@@ -308,13 +308,13 @@ class DownloadPopup(QDialog):
                     }
                 ]
             }
-            if size != 0: 
+            if size != 0:
                 self.filesize.setText(format_bytes(size))
             else:
                 self.filesize.setText('Unknown Sizes')
             self.save_input.setText(filename)
             self.download_button.setEnabled(True)
-    
+
     @Slot()
     def handle_download(self):
         """
@@ -326,7 +326,7 @@ class DownloadPopup(QDialog):
         if self.ytdl:
             selected_video_url = self.video_select.currentData()
             selected_audio_url = self.audio_select.currentData()
-            
+
             # Collect URLs that are actually selected (not "None")
             urls_to_download = []
             if selected_video_url:
@@ -353,11 +353,11 @@ class DownloadPopup(QDialog):
                     }
                 ]
             }
-            if total_size > 0: 
+            if total_size > 0:
                 self.filesize.setText(format_bytes(total_size))
             else:
                 self.filesize.setText('Unknown Sizes')
-        
+
         # If not YTDL, download_request was already prepared by get_urlInfo
         # Ensure the path is updated to the latest user input
         if self.download_request and self.download_request['items']:
@@ -366,7 +366,7 @@ class DownloadPopup(QDialog):
         # Handle file existence and user choice (resume/overwrite)
         if os.path.exists(full_save_path):
             action = self.show_overwrite_dialog(full_save_path)
-            
+
             if action == "overwrite":
                 try:
                     os.remove(full_save_path) # Delete the existing file if user chose to overwrite
@@ -400,7 +400,7 @@ class InfoFetcher(QThread):
         size = 0
         downloadable = False
         filename = 'unknown' # Default filename
-        
+
         try:
             if is_urlDownloadable(self.url):
                 size, filename = get_url_info(self.url)
@@ -408,8 +408,8 @@ class InfoFetcher(QThread):
         except Exception as e:
             print(f"Error fetching URL info for {self.url}: {e}")
             # Keep downloadable as False and size/filename as defaults on error
-            pass 
-            
+            pass
+
         self.infoReady.emit(downloadable, size, filename)
 
 class ThumbnailLoader(QThread):
@@ -428,7 +428,7 @@ class ThumbnailLoader(QThread):
         try:
             response = requests.get(self.url, stream=True, timeout=10)
             response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
-            
+
             img_data = response.content
             pixmap = QPixmap()
             pixmap.loadFromData(img_data)
@@ -441,4 +441,3 @@ class ThumbnailLoader(QThread):
             self.load_failed.emit(f"Network error loading thumbnail: {e}")
         except Exception as e:
             self.load_failed.emit(f"Error loading thumbnail: {str(e)}")
-

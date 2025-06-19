@@ -1,8 +1,7 @@
-from PySide6.QtCore import Qt, Slot, QThread, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
-    QComboBox, QPushButton, QLabel, QDialog, QLineEdit,
+    QVBoxLayout, QHBoxLayout,
+    QPushButton, QLabel, QDialog,
     QSpinBox, QDoubleSpinBox, QFileDialog
 )
 
@@ -106,7 +105,7 @@ class ConfigPopup(QDialog):
                 "All Files (*)"
             )
             self.ytCookies = filee
-    
+
     def handle_finished(self):
         self.main_window.config['port'] = self.port_input.value()
         self.main_window.config['save_path'] = self.saveDir
@@ -120,7 +119,7 @@ class ConfigPopup(QDialog):
         max_workers = self.sim_downloads_input.value()
         prev_workers = self.main_window.config['max_workers']
         self.main_window.config['max_workers'] = max_workers
-        
+
         self.main_window.update_config()
 
         if max_speed != prev_speed:
