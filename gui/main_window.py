@@ -1,21 +1,24 @@
-from PySide6.QtWidgets import ( QApplication, QFileDialog, QToolBar,
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QDialog, QStyle,
-    QLineEdit, QPushButton, QComboBox, QTextEdit, QLabel, QListWidget,
-    QProgressBar, QSplitter, QFrame, QSystemTrayIcon, QMenu, QMessageBox,
+from PySide6.QtWidgets import ( QApplication, QFileDialog,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QStyle,
+    QLineEdit, QPushButton, QLabel,
+    QSystemTrayIcon, QMenu, QMessageBox,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView,
     QSizePolicy
 )
-from PySide6.QtCore import Qt, Slot, QThread, QTimer, QSize, QSettings
-from PySide6.QtGui import QAction, QIcon, QPixmap, QBrush, QColor
+from PySide6.QtCore import Qt, Slot, QThread, QTimer, QSize
+from PySide6.QtGui import QAction, QIcon, QBrush, QColor
 
 from network.server_thread import ServerThread
-from network.download_thread import DownloadManager, DownloadTask
-from gui.download_popup import DownloadPopup # Assuming this now refers to the fixed version
+from network.download_thread import DownloadManager
+from gui.download_popup import DownloadPopup
 from gui.config_popup import ConfigPopup
-from utils.helpers import *
-from utils.constants import *
+from utils.helpers import (
+    resource_path, format_bytes, get_speed,
+    check_default
+)
+from utils.constants import DEFAULT_CONFIG
 
-import os, json, logging, time
+import os, json, logging
 from logging.handlers import RotatingFileHandler
 
 class MainWindow(QMainWindow):
@@ -35,11 +38,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
 
-        toolbar = QToolBar("Main Toolbar")
+        toolbar = self.addToolBar("Main Toolbar")
         toolbar.setIconSize(QSize(32, 32))
-        self.addToolBar(toolbar)
         self.play_action = QAction(
-            QIcon(self.style().standardIcon(QStyle.SP_MediaPlay)), 
+            QIcon(self.style().standardIcon(QStyle.SP_MediaPlay)),
             "Play", self
         )
         self.play_action.setCheckable(True)
@@ -47,8 +49,8 @@ class MainWindow(QMainWindow):
         self.play_action.triggered.connect(self.handle_play_trigger)
         toolbar.addAction(self.play_action)
         self.stop_action = QAction(
-            QIcon(self.style().standardIcon(QStyle.SP_MediaStop)), 
-            "Stop", self
+            QIcon(self.style().standardIcon(QStyle.SP_MediaStop)),
+            "Cancel", self
         )
         self.stop_action.setEnabled(False)
         self.stop_action.triggered.connect(self.handle_stop)
@@ -59,7 +61,7 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(spacer)
 
         config_action = QAction(
-            QIcon(resource_path("assets/settings.svg")), 
+            QIcon(resource_path("assets/settings.svg")),
             "Settings", self
         )
         config_action.triggered.connect(self.handle_config)
@@ -87,16 +89,16 @@ class MainWindow(QMainWindow):
         self.download_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.download_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.download_table.selectionModel().selectionChanged.connect(self.handle_updateTableClicked)
-        
+
         # Configure header
         table_header = self.download_table.horizontalHeader()
         table_header.setSectionResizeMode(0, QHeaderView.Stretch)
         table_header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         table_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         table_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        
+
         # Initial call to update table is no longer needed here as the download manager will send initial data
-        # self.update_download_table() 
+        # self.update_download_table()
         layout.addWidget(self.download_table)
 
         # Status bar
@@ -110,11 +112,12 @@ class MainWindow(QMainWindow):
         This method is a slot connected to DownloadManager.queue_updated signal.
         """
         self.download_table.setRowCount(len(tasks_data))
-        
+        speed_sum = 0
+
         for row, task in enumerate(tasks_data): # Iterate directly over the received data
             # Basename column
             name_item = QTableWidgetItem(task['basename'])
-            
+
             # Size column (show progress if downloading)
             if task['status'] not in ["Queued", "Completed"]:
                 size_text = f"{format_bytes(task['downloaded'])} / {format_bytes(task['total_size'])}"
@@ -122,10 +125,10 @@ class MainWindow(QMainWindow):
                 size_text = format_bytes(task['total_size'])
             size_item = QTableWidgetItem(size_text)
             size_item.setTextAlignment(Qt.AlignCenter)
-            
+
             # Status column
             status_item = QTableWidgetItem(task['status'])
-            
+
             # Apply color coding based on status
             if task['status'] == "Downloading":
                 status_item.setForeground(QBrush(QColor(Qt.green)))
@@ -137,11 +140,13 @@ class MainWindow(QMainWindow):
                 status_item.setForeground(QBrush(QColor(Qt.darkYellow)))
             else:
                 status_item.setForeground(QBrush(QColor(Qt.red)))
-            
+
             # Speed column
-            speed_item = QTableWidgetItem(f"{format_bytes(get_speed(task['history']))}/s")
+            speed_bytes = get_speed(task['history'])
+            speed_item = QTableWidgetItem(f"{format_bytes(speed_bytes)}/s")
             speed_item.setTextAlignment(Qt.AlignCenter)
-            
+            speed_sum += speed_bytes
+
             # Add items to table
             self.download_table.setItem(row, 0, name_item)
             self.download_table.setItem(row, 1, size_item)
@@ -149,6 +154,7 @@ class MainWindow(QMainWindow):
             self.download_table.setItem(row, 3, speed_item)
 
         self.handle_updateTableClicked(self.download_table.selectedItems())
+        self.status_bar.showMessage(f"▼ {format_bytes(speed_sum)}/s")
 
     def setup_config(self):
         try:
@@ -172,8 +178,8 @@ class MainWindow(QMainWindow):
         file_handler = RotatingFileHandler(
             filename=f'{self.config_dir}/errors.log',
             maxBytes=5 * 1024 ** 2, # 5 MB
-            backupCount=1, 
-            mode='a', 
+            backupCount=1,
+            mode='a',
             encoding='utf-8',
         )
         file_handler.setLevel(logging.ERROR)
@@ -189,7 +195,7 @@ class MainWindow(QMainWindow):
         # Setup download manager in a separate QThread
         self.download_manager = DownloadManager(self)
         # Connect to the update_download_table slot, which now expects list data
-        self.download_manager.queue_updated.connect(self.update_download_table) 
+        self.download_manager.queue_updated.connect(self.update_download_table)
         self.download_manager_thread = QThread()
         self.download_manager_thread.setObjectName("DownloadManagerThread")
         self.download_manager.moveToThread(self.download_manager_thread)
@@ -197,7 +203,7 @@ class MainWindow(QMainWindow):
 
         # Timer to periodically refresh the download table UI
         self.refresh_timer = QTimer()
-        self.refresh_timer.timeout.connect(lambda: self.download_manager._update_table()) # Trigger _update_table which emits queue_updated
+        self.refresh_timer.timeout.connect(lambda: self.download_manager._update_table())
         self.refresh_timer.start(500)  # Update UI every 500ms
 
     def setup_system_tray(self):
@@ -257,7 +263,6 @@ class MainWindow(QMainWindow):
         )
         if directory:
             self.config['save_path'] = directory
-            self.dir_label.setText(directory)
             self.update_config()
 
     def handle_updateTableClicked(self, selected, deselected=None):
@@ -274,12 +279,12 @@ class MainWindow(QMainWindow):
                 row = None
 
         if isinstance(row, int):
-            task = self.download_manager.tasks[row] 
+            task = self.download_manager.tasks[row]
             # Set play/pause action's checked state based on task status
             self.play_action.setChecked(task.status in ["Paused", "Completed", "Canceled", "ERROR"])
             # Update the icon based on the new checked state
             self.handle_play_toggle(self.play_action.isChecked())
-            
+
             # Enable/disable play/stop actions based on task status
             if task.status in ["Canceled", "Completed", "ERROR"]:
                 self.play_action.setEnabled(False)
@@ -298,7 +303,7 @@ class MainWindow(QMainWindow):
         if not self.download_table.selectedItems():
             return
         row = self.download_table.selectedItems()[0].row()
-        task = self.download_manager.tasks[row] 
+        task = self.download_manager.tasks[row]
         self.download_manager.cancel_download(task)
 
     def handle_play_toggle(self, checked):
