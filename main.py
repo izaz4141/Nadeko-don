@@ -7,7 +7,7 @@ from gui.main_window import MainWindow
 from utils.helpers import resource_path
 
 APP_NAME = "Nadeko~don"
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 
 if __name__ == "__main__":
