@@ -14,7 +14,7 @@ from gui.download_popup import DownloadPopup
 from gui.config_popup import ConfigPopup
 from utils.helpers import (
     resource_path, format_bytes, get_speed,
-    check_default
+    check_default, format_durasi
 )
 from utils.constants import DEFAULT_CONFIG
 
@@ -83,8 +83,8 @@ class MainWindow(QMainWindow):
 
         ## Create download table
         self.download_table = QTableWidget()
-        self.download_table.setColumnCount(4)
-        self.download_table.setHorizontalHeaderLabels(["Filename", "Size", "Status", "Speed"])
+        self.download_table.setColumnCount(5)
+        self.download_table.setHorizontalHeaderLabels(["Filename", "Size", "Status", "Speed", "Time"])
         self.download_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.download_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.download_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -147,11 +147,17 @@ class MainWindow(QMainWindow):
             speed_item.setTextAlignment(Qt.AlignCenter)
             speed_sum += speed_bytes
 
+            # Elapsed time column
+            elapsed_time = task['timer'].get_elapsedTime()
+            eT_item = QTableWidgetItem(format_durasi(elapsed_time))
+            eT_item.setTextAlignment(Qt.AlignCenter)
+
             # Add items to table
             self.download_table.setItem(row, 0, name_item)
             self.download_table.setItem(row, 1, size_item)
             self.download_table.setItem(row, 2, status_item)
             self.download_table.setItem(row, 3, speed_item)
+            self.download_table.setItem(row, 4, eT_item)
 
         self.handle_updateTableClicked(self.download_table.selectedItems())
         self.status_bar.showMessage(f"▼ {format_bytes(speed_sum)}/s")

@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QSystemTrayIcon, QMessageBox
 
 from utils.ffmpeg import combine_video_audio, check_ffmpeg_in_path
 from utils.helpers import is_m3u8_url, extract_size_info, pre_allocate_file
+from utils.timer import ProgressTimer
 from network.ydl_thread import YTDL_Thread
 
 import os, time, requests, subprocess, threading, math, json
@@ -47,6 +48,7 @@ class DownloadTask(QObject):
         self.downloaded = 0
         self.total_size = 0
         self.speed = 0
+        self.timer = ProgressTimer()
         self.history = deque(maxlen=60)
 
         self._paused = False
@@ -111,6 +113,7 @@ class DownloadTask(QObject):
                 self.part_pause_event.set()
                 with self.part_pause_condition:
                     self.part_pause_condition.notify_all()
+                self.timer.pause()
 
     def resume(self):
         """
@@ -125,6 +128,7 @@ class DownloadTask(QObject):
                 self.part_pause_event.clear()
                 with self.part_pause_condition:
                     self.part_pause_condition.notify_all()
+                self.timer.resume()
 
     def cancel(self):
         """
@@ -139,6 +143,7 @@ class DownloadTask(QObject):
                 self.part_cancel_event.set()
                 with self.part_pause_condition:
                     self.part_pause_condition.notify_all()
+                self.timer.stop()
 
     def create_session(self, methods: list):
         """
@@ -161,7 +166,7 @@ class DownloadTask(QObject):
         Main download logic for the task. This method is run in a separate thread.
         Handles YTDL combining, HLS streaming, and multi-part HTTP downloads.
         """
-        self.start_time = time.time()
+        self.timer.start()
         try:
             for i, url in enumerate(self.urls):
                 # Mutex needed here to safely read _canceled flag, which can be set by GUI thread.
@@ -228,6 +233,7 @@ class DownloadTask(QObject):
         """
         with QMutexLocker(self.mutex):
             if not self._canceled:
+                self.timer.stop()
                 self._set_status("Completed")
                 self.finished.emit(self)
 
@@ -237,6 +243,7 @@ class DownloadTask(QObject):
         Accessed by worker thread, modifies shared state (status). Requires mutex.
         """
         with QMutexLocker(self.mutex):
+            self.timer.stop()
             self._set_status("ERROR")
             self.error_occurred.emit(self, str(exception))
 
@@ -844,6 +851,7 @@ class DownloadManager(QObject):
                 'downloaded': task.downloaded,
                 'total_size': task.total_size,
                 'status': task.status,
+                'timer': task.timer,
                 'history': list(task.history) # Send a copy of history
             })
         return tasks_data
