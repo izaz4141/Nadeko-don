@@ -40,7 +40,6 @@ class ServerThread(QThread):
                     pass # Fall through to 400 if JSON is invalid
                 except Exception as e:
                     print(f"Error handling POST request: {e}")
-                    pass
                 inner_self.send_response(400)
                 inner_self.end_headers()
                 print("Received POST request, sent 400 Bad Request")
@@ -70,4 +69,3 @@ class ServerThread(QThread):
             self.server.shutdown() # Shuts down the server's request handling loop
             self.server.server_close() # Closes the server socket
             print("Python server stopped.")
-

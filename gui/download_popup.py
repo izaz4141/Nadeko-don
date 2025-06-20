@@ -11,6 +11,7 @@ from utils.helpers import (
     is_urlDownloadable, format_bytes
 )
 from network.ydl_thread import YTDL_Thread
+from utils.ffmpeg import check_ffmpeg_in_path
 
 import requests, os
 
@@ -42,7 +43,7 @@ class DownloadPopup(QDialog):
         self.thumbnail_frame.setVisible(False)
         self.thumbnail_frame.setFrameShape(QFrame.Shape.StyledPanel)
         thumbnail_layout = QVBoxLayout(self.thumbnail_frame)
-        self.thumbnail_label = QLabel("")
+        self.thumbnail_label = QLabel("Loading...")
         self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.thumbnail_label.setMinimumWidth(240)
         thumbnail_layout.addWidget(self.thumbnail_label)
@@ -61,9 +62,8 @@ class DownloadPopup(QDialog):
         save_edit.addWidget(self.save_input)
         side_layout.addLayout(save_edit)
 
-        self.filesize = QLabel("")
+        self.filesize = QLabel("Loading...")
         side_layout.addWidget(self.filesize)
-
 
         # Video Stream
         self.videoWidget = QWidget()
@@ -142,10 +142,11 @@ class DownloadPopup(QDialog):
                 vcodec = f.get('vcodec', '?')
                 video_ext = f.get('video_ext', '') or f.get('ext', '')
                 filesize = f.get('filesize') or f.get('filesize_approx') or 0
+                fid = f.get('format_id')
                 self.video_formats.append([
                     f.get('url'),
                     f"{resolution}p-{vcodec}-{video_ext}-{format_bytes(filesize)}",
-                    filesize
+                    filesize, fid
                 ])
 
         # Filter and sort audio formats
@@ -155,19 +156,20 @@ class DownloadPopup(QDialog):
                 acodec = f.get('acodec', '?')
                 audio_ext = f.get('audio_ext', '') or f.get('ext', '')
                 filesize = f.get('filesize') or f.get('filesize_approx') or 0
+                fid = f.get('format_id')
                 self.audio_formats.append([
                     f.get('url'),
                     f"{acodec}-{audio_ext}-{format_bytes(filesize)}",
-                    filesize
+                    filesize, fid
                 ])
 
         # Add "None" options for user flexibility
-        self.video_formats.append([None, "None (No video)", 0])
-        self.audio_formats.append([None, "None (No audio)", 0])
+        self.video_formats.append([None, "None (No video)", 0, None])
+        self.audio_formats.append([None, "None (No audio)", 0, None])
 
-        for url, desc, _ in self.video_formats:
+        for url, desc, _, _ in self.video_formats:
             self.video_select.addItem(desc, url)
-        for url, desc, _ in self.audio_formats:
+        for url, desc, _, _ in self.audio_formats:
             self.audio_select.addItem(desc, url)
 
         # Set initial filename based on title and a default video extension
@@ -286,9 +288,9 @@ class DownloadPopup(QDialog):
                 self.ytdl_thread.stop() # Ensure previous thread is stopped
                 self.ytdl_thread.wait(1000)
 
-            self.ytdl_thread = YTDL_Thread(self.main_window, self.url)
+            self.ytdl_thread = YTDL_Thread(self.main_window.config, self.url)
             self.ytdl_thread.info_ready.connect(self.handle_ytdl_video_info)
-            self.ytdl_thread.error.connect(self.main_window.handle_error) # Connect to main window's error handler
+            self.ytdl_thread.error.connect(self.handle_error)
             self.ytdl_thread.start()
 
             # Show YTDL specific UI elements
@@ -299,12 +301,12 @@ class DownloadPopup(QDialog):
         else:
             # It's a direct downloadable file
             self.download_request = {
-                'type': 'single', # Type for DownloadManager
+                'type': 'single',
                 'items': [
                     {
-                        'url': self.url, # Single URL for the item
+                        'url': self.url,
                         'path': f"{self.main_window.config['save_path']}/{filename}",
-                        'filesize': size # Optional, DownloadTask will re-verify
+                        'filesize': size
                     }
                 ]
             }
@@ -314,6 +316,13 @@ class DownloadPopup(QDialog):
                 self.filesize.setText('Unknown Sizes')
             self.save_input.setText(filename)
             self.download_button.setEnabled(True)
+
+    def handle_error(self, err):
+        self.main_window.logger.error(err)
+        QMessageBox.warning(self, "Error",
+            err
+        )
+        self.close()
 
     @Slot()
     def handle_download(self):
@@ -327,12 +336,19 @@ class DownloadPopup(QDialog):
             selected_video_url = self.video_select.currentData()
             selected_audio_url = self.audio_select.currentData()
 
-            # Collect URLs that are actually selected (not "None")
+            # # Format id of selected streams for yt-dlp download fallback
+            video_id = self.video_formats[self.video_select.currentIndex()][3] if selected_video_url else None
+            audio_id = self.audio_formats[self.audio_select.currentIndex()][3] if selected_audio_url else None
+
             urls_to_download = []
+            formats_id = []
             if selected_video_url:
                 urls_to_download.append(selected_video_url)
+                formats_id.append(video_id)
             if selected_audio_url:
                 urls_to_download.append(selected_audio_url)
+                formats_id.append(audio_id)
+            formats_id = "+".join(formats_id)
 
             if not urls_to_download:
                 QMessageBox.warning(self, "No Stream Selected", "Please select at least one video or audio stream to download.")
@@ -344,12 +360,14 @@ class DownloadPopup(QDialog):
             total_size = video_size + audio_size
 
             self.download_request = {
-                'type': 'ytdl', # Crucially, keep type as 'ytdl' for consistency
+                'type': 'ytdl',
                 'items': [
                     {
-                        'url': urls_to_download, # Pass list of selected URLs
+                        'url': urls_to_download,
+                        'original_url': self.url,
+                        'format_id': formats_id,
                         'path': full_save_path,
-                        'filesize': total_size # Optional, but good to pass if known
+                        'filesize': total_size
                     }
                 ]
             }
@@ -369,8 +387,10 @@ class DownloadPopup(QDialog):
 
             if action == "overwrite":
                 try:
-                    os.remove(full_save_path) # Delete the existing file if user chose to overwrite
                     print(f"Overwriting existing file: {full_save_path}")
+                    os.remove(full_save_path) # Delete the existing file if user chose to overwrite
+                    if os.path.exists(f"{full_save_path}.metadata"):
+                        os.remove(f"{full_save_path}.metadata")
                 except OSError as e:
                     QMessageBox.critical(self, "File Error", f"Could not remove existing file: {e}")
                     return # Stop if file cannot be removed
