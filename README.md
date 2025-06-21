@@ -6,7 +6,7 @@
 Downloader built with QT
 
 ## Overview
-This solution provides a robust desktop application with browser integration capabilities, enabling streamlined downloading of video content from various web sources. The tool supports modern streaming protocols while offering granular control over transfer parameters for optimized performance.
+This solution provides a robust desktop application with browser integration capabilities, enabling streamlined downloading of video content from various web sources.
 
 
 ## Features
@@ -19,10 +19,8 @@ This solution provides a robust desktop application with browser integration cap
 
 ## Requirements
 
- - **Runtime**: Qt 6 Framework (minimum version 6.4 recommended)
- - **Platform**: Windows 10/11, macOS 12+, or Linux with X11/Wayland
- - **Browser Compatibility**: Firefox 100+ (for extension functionality)
- - **Dependencies**: Python 3.9+ runtime environment
+ - **Platform**: Windows 10/11 or Linux
+ - **Dependencies**: FFMPEG
 
 
 ## Installation
@@ -52,3 +50,8 @@ pyinstaller build.spec
 3. Download progress visualization and analytics
 4. Dynamic download part configuration during transfers
 5. Download scheduling and queue management
+
+## Browser Extensions
+
+ - **Firefox**: [NadeCon](https://github.com/izaz4141/NadeCon)
+ - **Chrome**: [Maybe?]()
