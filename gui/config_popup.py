@@ -2,7 +2,8 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QApplication, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QDialog,
-    QSpinBox, QDoubleSpinBox, QFileDialog
+    QSpinBox, QDoubleSpinBox, QFileDialog,
+    QMessageBox
 )
 
 from utils.updater import UpdateWorker
@@ -106,7 +107,7 @@ class ConfigPopup(QDialog):
 
     def fetch_version(self, init=False):
         self.curVersion_label.setText("Fetching version...")
-        
+
         if self.updater_thread and self.updater_thread.isRunning():
             self.updater_thread.stop()
             self.updater_thread.wait(1000)

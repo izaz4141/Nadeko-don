@@ -134,7 +134,7 @@ def initiate_self_replacement(new_executable_path: str):
             print(f"Windows update helper launched: {helper_script_path}")
         except Exception as e:
             print(f"Error launching Windows update helper: {e}")
-    elif sys.platform in ["linux", "darwin"]:
+    elif sys.platform == 'linux':
         # Linux/macOS: Create a shell script
         helper_script_content = f"""
         #!/bin/bash
@@ -144,12 +144,13 @@ def initiate_self_replacement(new_executable_path: str):
         rm "{current_exe_path}"
         # Move new executable to old path
         mv "{new_executable_path}" "{current_exe_path}"
+        chmod +x "{current_exe_path}"
         # Relaunch the updated app in background and detach
-        nohup "{current_exe_path}" & disown
+        {current_exe_path} & disown
         # Clean up the helper script itself
         rm -- "$0"
         """
-        temp_dir = "/tmp" if sys.platform == "linux" else "/var/folders/zz/zyxvpxvq62u_t_z0_00000000000000/_T_" # A more robust temp dir
+        temp_dir = "/tmp" 
         helper_script_path = os.path.join(temp_dir, f"update_helper_{os.getpid()}.sh")
         try:
             with open(helper_script_path, "w") as f:
@@ -183,7 +184,7 @@ class UpdateWorker(QThread):
             'items': [
                 {
                     'url': self.download_url,
-                    'path': f"{self.main_window.config['save_path']}/{app_name}"
+                    'path': f"{self.main_window.config['save_path']}/{self.app_name}"
                 }
             ]
         }
