@@ -230,11 +230,13 @@ class MainWindow(QMainWindow):
         self.sys_tray.setIcon(QIcon(resource_path('assets/nadeko-don.png')))
         self.sys_tray.setToolTip("Nadeko~don\nA GUI for YT-DLP")
 
+        self.sys_tray.activated.connect(self.on_tray_activated)
+
         tray_menu = QMenu()
         show_action = tray_menu.addAction("Show")
         quit_action = tray_menu.addAction("Quit")
 
-        show_action.triggered.connect(self.show)
+        show_action.triggered.connect(self.show_window)
         quit_action.triggered.connect(self.quit_app)
 
         self.sys_tray.setContextMenu(tray_menu)
@@ -245,6 +247,15 @@ class MainWindow(QMainWindow):
         os.makedirs(self.config_dir, exist_ok=True)
         with open(f"{self.config_dir}/config.json", "w") as f:
                 json.dump(self.config, f, indent=4)
+
+    def on_tray_activated(self, reason):
+        """
+        Slot to handle activated signal from QSystemTrayIcon.
+        'reason' indicates why the icon was activated.
+        """
+        print(reason)
+        if reason == QSystemTrayIcon.DoubleClick:
+            self.show_window()
 
 
     def handle_received_url(self, url):
@@ -397,6 +408,12 @@ class MainWindow(QMainWindow):
         self.cpopup.speed_changed.connect(self.download_manager.set_max_speed)
         self.cpopup.workers_changed.connect(self.download_manager.set_max_workers)
         self.cpopup.show()
+    
+    def show_window(self):
+        """Shows the main window and brings it to the front."""
+        self.showNormal() # Restore the window if minimized
+        self.activateWindow() # Bring to front
+        self.raise_() # Raise to top of stack
 
     def closeEvent(self, event):
         """
