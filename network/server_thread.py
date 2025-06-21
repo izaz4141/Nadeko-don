@@ -1,9 +1,6 @@
 from PySide6.QtCore import QThread, Signal
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
-import os
-from urllib.parse import unquote, urlparse
-import re
 
 class ServerThread(QThread):
     # Changed signal to emit a dictionary to receive both url and filename

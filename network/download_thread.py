@@ -7,7 +7,6 @@ from PySide6.QtWidgets import QSystemTrayIcon, QMessageBox
 from utils.ffmpeg import combine_video_audio, check_ffmpeg_in_path
 from utils.helpers import is_m3u8_url, extract_size_info, pre_allocate_file
 from utils.timer import ProgressTimer
-from network.ydl_thread import YTDL_Thread
 
 import os, time, requests, subprocess, threading, math, json
 from collections import deque

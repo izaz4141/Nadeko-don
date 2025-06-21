@@ -2,10 +2,10 @@ import json, os, sys, subprocess, requests
 from packaging.version import parse as parse_version
 
 from PySide6.QtCore import QThread, Signal
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 # --- Configuration (now only GitHub repo details) ---
-GITHUB_REPO_OWNER = "izaz4141" 
+GITHUB_REPO_OWNER = "izaz4141"
 GITHUB_REPO_NAME = "Nadeko-don"
 
 def get_latest_github_release_info() -> dict | None:
@@ -81,7 +81,7 @@ def check_for_updates(current_version: str):
 
 def handle_update_result(success: bool, message: str):
     if success:
-        QMessageBox.information("Update Available",
+        QMessageBox.information(None, "Update Available",
                                 "A new version has been downloaded. "
                                 "The application will now restart to apply the update.\n")
         # --- Initiate Self-Replacement Here ---
@@ -89,11 +89,11 @@ def handle_update_result(success: bool, message: str):
         QApplication.instance().quit() # Or self.close()
     else:
         if "already on latest version" not in message.lower() and "failed to retrieve release info" not in message.lower():
-            QMessageBox.warning("Update Failed", f"Could not check for updates:\n{message}")
+            QMessageBox.warning(None, "Update Failed", f"Could not check for updates:\n{message}")
         elif "failed to retrieve release info" in message.lower():
-                QMessageBox.warning("Network Error", f"Could not connect to GitHub to check for updates.\n{message}")
+                QMessageBox.warning(None, "Network Error", f"Could not connect to GitHub to check for updates.\n{message}")
         else:
-            QMessageBox.information("No Update", "You are already running the latest version.")
+            QMessageBox.information(None, "No Update", "You are already running the latest version.")
 
 def initiate_self_replacement(new_executable_path: str):
     """
@@ -150,7 +150,7 @@ def initiate_self_replacement(new_executable_path: str):
         # Clean up the helper script itself
         rm -- "$0"
         """
-        temp_dir = "/tmp" 
+        temp_dir = "/tmp"
         helper_script_path = os.path.join(temp_dir, f"update_helper_{os.getpid()}.sh")
         try:
             with open(helper_script_path, "w") as f:
@@ -194,4 +194,3 @@ class UpdateWorker(QThread):
     def handle_downloaded(self, task):
         initiate_self_replacement(task.save_path)
         self.main_window.quit_app()
-            

@@ -11,7 +11,6 @@ from utils.helpers import (
     is_urlDownloadable, format_bytes
 )
 from network.ydl_thread import YTDL_Thread
-from utils.ffmpeg import check_ffmpeg_in_path
 
 import requests, os
 

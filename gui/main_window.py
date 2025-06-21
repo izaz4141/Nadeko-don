@@ -253,7 +253,6 @@ class MainWindow(QMainWindow):
         Slot to handle activated signal from QSystemTrayIcon.
         'reason' indicates why the icon was activated.
         """
-        print(reason)
         if reason == QSystemTrayIcon.DoubleClick:
             self.show_window()
 
@@ -408,7 +407,7 @@ class MainWindow(QMainWindow):
         self.cpopup.speed_changed.connect(self.download_manager.set_max_speed)
         self.cpopup.workers_changed.connect(self.download_manager.set_max_workers)
         self.cpopup.show()
-    
+
     def show_window(self):
         """Shows the main window and brings it to the front."""
         self.showNormal() # Restore the window if minimized
