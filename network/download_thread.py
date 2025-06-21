@@ -177,10 +177,10 @@ class DownloadTask(QObject):
                 save_path_for_url = self._get_save_path(i)
                 self._download_url(url, save_path_for_url)
 
-            self.total_size = self.downloaded
-
             if self.ytdl:
                 self._combine_ytdl_files()
+
+            self.total_size = self._get_existing_size(self.save_path)
 
             self._handle_success()
 
@@ -827,6 +827,7 @@ class DownloadManager(QObject):
     """
     # Signal emitted when the queue state changes, carrying a snapshot of task data.
     queue_updated = Signal(list)
+    task_finished = Signal(DownloadTask)
 
     def __init__(self, parent):
         """Initializes the DownloadManager with a reference to the main application window (parent)."""
@@ -850,6 +851,7 @@ class DownloadManager(QObject):
                 'basename': task.basename,
                 'downloaded': task.downloaded,
                 'total_size': task.total_size,
+                'path': task.save_path,
                 'status': task.status,
                 'timer': task.timer,
                 'history': list(task.history) # Send a copy of history
@@ -882,7 +884,7 @@ class DownloadManager(QObject):
                 'type': request_type,
                 'config': self.main_window.config
             }
-            if request_type == 'ytdl': 
+            if request_type == 'ytdl':
                 task_items['original_url'] = item_data['original_url']
                 task_items['format_id'] = item_data['format_id']
 
@@ -1022,10 +1024,11 @@ class DownloadManager(QObject):
             f"{task.basename} downloaded successfully!",
             QSystemTrayIcon.MessageIcon.Information
         )
-        # Emit a snapshot of the updated queue after cleanup
         with QMutexLocker(self.mutex):
             self.queue_updated.emit(self._get_current_tasks_data())
+            self.task_finished.emit(task)
         self.process_queue() # Try to start next queued download
+
 
     @Slot(QObject, str)
     def _handle_task_error(self, task: QObject, error_message: str):
@@ -1130,6 +1133,18 @@ class DownloadManager(QObject):
                 self.queue_updated.emit(self._get_current_tasks_data())
             self.process_queue() # Trigger queue processing to start next task if slot available
 
+    def remove_download(self, task: DownloadTask):
+        """
+        Removes a specific download task and cleans up its resources.
+        It cancels the task first then cleans up the resources.
+        """
+        if not task:
+            return
+        if not task._canceled:
+            task.cancel()
+        self._cleanup_task(task)
+        with QMutexLocker(self.mutex):
+            self.tasks.remove(task)
 
     def set_max_speed(self):
         """

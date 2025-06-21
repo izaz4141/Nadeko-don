@@ -285,7 +285,7 @@ class DownloadPopup(QDialog):
         if not downloadable:
             # It's not a simple downloadable file, try YTDL
             if self.ytdl_thread and self.ytdl_thread.isRunning():
-                self.ytdl_thread.stop() # Ensure previous thread is stopped
+                self.ytdl_thread.stop()
                 self.ytdl_thread.wait(1000)
 
             self.ytdl_thread = YTDL_Thread(self.main_window.config, self.url)

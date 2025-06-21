@@ -5,13 +5,14 @@ from PySide6.QtWidgets import ( QApplication, QFileDialog,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView,
     QSizePolicy
 )
-from PySide6.QtCore import Qt, Slot, QThread, QTimer, QSize
+from PySide6.QtCore import Qt, Slot, QThread, QTimer, QSize, QPoint
 from PySide6.QtGui import QAction, QIcon, QBrush, QColor
 
 from network.server_thread import ServerThread
 from network.download_thread import DownloadManager
 from gui.download_popup import DownloadPopup
 from gui.config_popup import ConfigPopup
+from gui.menu import DownloadContext
 from utils.helpers import (
     resource_path, format_bytes, get_speed,
     check_default, format_durasi
@@ -40,6 +41,7 @@ class MainWindow(QMainWindow):
 
         toolbar = self.addToolBar("Main Toolbar")
         toolbar.setIconSize(QSize(32, 32))
+
         self.play_action = QAction(
             QIcon(self.style().standardIcon(QStyle.SP_MediaPlay)),
             "Play", self
@@ -48,6 +50,7 @@ class MainWindow(QMainWindow):
         self.play_action.setEnabled(False)
         self.play_action.triggered.connect(self.handle_play_trigger)
         toolbar.addAction(self.play_action)
+
         self.stop_action = QAction(
             QIcon(self.style().standardIcon(QStyle.SP_MediaStop)),
             "Cancel", self
@@ -55,6 +58,14 @@ class MainWindow(QMainWindow):
         self.stop_action.setEnabled(False)
         self.stop_action.triggered.connect(self.handle_stop)
         toolbar.addAction(self.stop_action)
+
+        self.delete_action = QAction(
+            QIcon(self.style().standardIcon(QStyle.SP_TrashIcon)),
+            "Delete", self
+        )
+        self.delete_action.setEnabled(False)
+        self.delete_action.triggered.connect(self.handle_delete)
+        toolbar.addAction(self.delete_action)
 
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -89,6 +100,8 @@ class MainWindow(QMainWindow):
         self.download_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.download_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.download_table.selectionModel().selectionChanged.connect(self.handle_updateTableClicked)
+        self.download_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.download_table.customContextMenuRequested.connect(self.show_contextMenu)
 
         # Configure header
         table_header = self.download_table.horizontalHeader()
@@ -298,14 +311,15 @@ class MainWindow(QMainWindow):
             else:
                 self.play_action.setEnabled(True)
                 self.stop_action.setEnabled(True)
+            self.delete_action.setEnabled(True)
         else:
             # If no row is selected, disable both actions
             self.play_action.setEnabled(False)
             self.stop_action.setEnabled(False)
+            self.delete_action.setEnabled(False)
 
     def handle_stop(self):
         """Cancels the currently selected download task."""
-        # Ensure a task is selected before proceeding
         if not self.download_table.selectedItems():
             return
         row = self.download_table.selectedItems()[0].row()
@@ -344,6 +358,38 @@ class MainWindow(QMainWindow):
             self.play_action.setIcon( # Update icon to 'Pause' as it's now downloading
                 self.style().standardIcon(QStyle.SP_MediaPause)
             )
+
+    def handle_delete(self):
+        if not self.download_table.selectedItems():
+            return
+        row = self.download_table.selectedItems()[0].row()
+        task = self.download_manager.tasks[row]
+
+        path = task.save_path
+        option = QMessageBox(self)
+        option.setText(f"Delete the selected file and remove it from the list? ")
+        option.setInformativeText(path)
+        option.setIcon(QMessageBox.Question)
+        delAll = option.addButton("Delete and remove", QMessageBox.AcceptRole)
+        removeOnly = option.addButton("Remove", QMessageBox.RejectRole)
+        option.exec()
+
+        if option.clickedButton() == delAll:
+            os.remove(path)
+            if os.path.exists(f"{path}.metadata"): os.remove(f"{path}.metadata")
+            self.download_manager.remove_download(task)
+        elif option.clickedButton() == removeOnly:
+            self.download_manager.remove_download(task)
+
+
+    def show_contextMenu(self, pos:QPoint):
+        item = self.download_table.itemAt(pos)
+        if item:
+            task = self.download_manager._get_current_tasks_data()[item.row()]
+
+            context_menu = DownloadContext(self.download_table, task)
+            context_menu.do_delete.connect(self.handle_delete)
+            context_menu.exec(self.download_table.mapToGlobal(pos))
 
     def handle_config(self):
         """Opens the configuration popup window."""

@@ -1,9 +1,11 @@
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout,
+    QApplication, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QDialog,
     QSpinBox, QDoubleSpinBox, QFileDialog
 )
+
+from utils.updater import UpdateWorker
 
 import os
 
@@ -16,7 +18,9 @@ class ConfigPopup(QDialog):
         self.main_window = parent
         self.saveDir = parent.config['save_path']
         self.ytCookies = parent.config['yt_cookies']
+        self.updater_thread = None
         self.init_ui()
+        self.fetch_version(True)
 
     def init_ui(self):
         self.setMinimumSize(600, 250)
@@ -82,11 +86,64 @@ class ConfigPopup(QDialog):
         ytCookies_section.addWidget(self.ytCookies_input)
         main_layout.addLayout(ytCookies_section)
 
+        version_section = QHBoxLayout()
+        version_label = QLabel("Version")
+        version_label.setToolTip("Current application version")
+        version_section.addWidget(version_label)
+        self.curVersion_label = QLabel("Fetching version...")
+        version_section.addWidget(self.curVersion_label)
+        self.checkVer_button = QPushButton("Check")
+        self.checkVer_button.setToolTip("Check for new version")
+        self.checkVer_button.clicked.connect(self.fetch_version)
+        version_section.addWidget(self.checkVer_button)
+        main_layout.addLayout(version_section)
+
         ok_button = QPushButton("OK")
         ok_button.clicked.connect(self.handle_finished)
         main_layout.addWidget(ok_button)
 
         self.setLayout(main_layout)
+
+    def fetch_version(self, init=False):
+        self.curVersion_label.setText("Fetching version...")
+        
+        if self.updater_thread and self.updater_thread.isRunning():
+            self.updater_thread.stop()
+            self.updater_thread.wait(1000)
+        self.updater_thread = UpdateWorker(self.main_window)
+        if init:
+            self.updater_thread.updateDetails.connect(self.init_updater)
+        else:
+            self.updater_thread.updateDetails.connect(self.handle_updater)
+        self.updater_thread.start()
+
+    def init_updater(self, details:list):
+        updates, message, download_url = details
+        self.curVersion_label.setText(message)
+
+    def handle_updater(self, details:list):
+        updates, message, download_url = details
+        self.curVersion_label.setText(message)
+        if updates and download_url:
+
+            confirm = QMessageBox(self)
+            confirm.setText(message)
+            confirm.setInformativeText("Do you want to update the app?")
+            confirm.setIcon(QMessageBox.Question)
+
+            update_button = confirm.addButton("Update", QMessageBox.AcceptRole)
+            cancel_button = confirm.addButton("Cancel", QMessageBox.RejectRole)
+            confirm.setDefaultButton(update_button)
+
+            confirm.exec()
+            if confirm.clickedButton() == update_button:
+                if self.updater_thread and self.updater_thread.isRunning():
+                    self.updater_thread.stop()
+                    self.updater_thread.wait(1000)
+                self.updater_thread = UpdateWorker(self.main_window, download_url)
+                self.updater_thread.updateDetails.connect(self.handle_updater)
+                self.updater_thread.start()
+
 
     def handle_changeDir(self, tipe):
         if tipe in ['save_path']:
