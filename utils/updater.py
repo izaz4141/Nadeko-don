@@ -21,6 +21,8 @@ def get_latest_github_release_info() -> dict | None:
         app_name = 'nadeko-don.exe'
     elif sys.platform == 'linux':
         app_name = 'nadeko-don'
+    else:
+        app_name = 'unknown'
 
     try:
         response = requests.get(api_url, headers=headers)
@@ -38,29 +40,30 @@ def get_latest_github_release_info() -> dict | None:
                 break
 
         if latest_tag and download_url:
-            print(f"Latest GitHub release: {latest_tag}, Download URL: {download_url}")
             return {"tag_name": latest_tag, "download_url": download_url}
         else:
-            print(f"Could not find latest tag or executable asset '{app_name}' in release info.")
+            raise Exception(f"Could not find latest tag or executable asset '{app_name}' for OS '{sys.platform}'.")
             return None
 
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching GitHub release info: {e}")
+        raise Exception(f"Error fetching GitHub release info: {e}")
         return None
     except json.JSONDecodeError as e:
-        print(f"Error parsing JSON response: {e}")
+        raise Exception(f"Error parsing JSON response: {e}")
         return None
 
-def check_for_updates(current_version: str):
+def check_for_updates(current_version: str, logger):
     """
     Checks for updates, downloads if available, and prepares for replacement.
     Takes current_version and app_executable_name as arguments.
     """
-    print(f"Current app version: {current_version}")
-    release_info = get_latest_github_release_info()
+    release_info = None
+    try:
+        release_info = get_latest_github_release_info()
+    except Exception as e:
+        logger.error(e)
 
     if not release_info:
-        print("Could not retrieve latest release information. Cannot check for updates.")
         return False, "Failed to retrieve release info.", None
 
     latest_version_str = release_info["tag_name"]
@@ -72,28 +75,13 @@ def check_for_updates(current_version: str):
         latest_version = parse_version(latest_version_str.lstrip('vV'))
 
         if latest_version > current_version:
-            return True, f"Version {latest_version} is available", download_url
+            return True, f"v{current_version}: v{latest_version} is available", download_url
 
         else:
-            return False, f"Already on latest ({current_version}).", None
+            return False, f"v{current_version}: Already on latest", None
     except Exception as e:
-        return False, f"Error: {e}", None
-
-def handle_update_result(success: bool, message: str):
-    if success:
-        QMessageBox.information(None, "Update Available",
-                                "A new version has been downloaded. "
-                                "The application will now restart to apply the update.\n")
-        # --- Initiate Self-Replacement Here ---
-        initiate_self_replacement(message) # 'message' is the path to the new executable
-        QApplication.instance().quit() # Or self.close()
-    else:
-        if "already on latest version" not in message.lower() and "failed to retrieve release info" not in message.lower():
-            QMessageBox.warning(None, "Update Failed", f"Could not check for updates:\n{message}")
-        elif "failed to retrieve release info" in message.lower():
-                QMessageBox.warning(None, "Network Error", f"Could not connect to GitHub to check for updates.\n{message}")
-        else:
-            QMessageBox.information(None, "No Update", "You are already running the latest version.")
+        logger.error(f"v{current_version}: [ERROR] {e}")
+        return False, f"v{current_version}: [ERROR] {e}", None
 
 def initiate_self_replacement(new_executable_path: str):
     """
@@ -133,7 +121,7 @@ def initiate_self_replacement(new_executable_path: str):
             subprocess.Popen([helper_script_path], shell=True, creationflags=subprocess.DETACHED_PROCESS)
             print(f"Windows update helper launched: {helper_script_path}")
         except Exception as e:
-            print(f"Error launching Windows update helper: {e}")
+            raise Exception(f"Error launching Windows update helper: {e}")
     elif sys.platform == 'linux':
         # Linux/macOS: Create a shell script
         helper_script_content = f"""
@@ -159,7 +147,7 @@ def initiate_self_replacement(new_executable_path: str):
             subprocess.Popen(["bash", helper_script_path], close_fds=True, preexec_fn=os.setsid)
             print(f"Linux/macOS update helper launched: {helper_script_path}")
         except Exception as e:
-            print(f"Error launching Linux/macOS update helper: {e}")
+            raise Exception(f"Error launching Linux/macOS update helper: {e}")
     else:
         print("Self-update is not supported on this platform.")
         QMessageBox.critical("Update Error", "Self-update is not supported on your operating system.")
@@ -176,7 +164,7 @@ class UpdateWorker(QThread):
 
     def run(self):
         if not self.download_url:
-            updates, message, download_url = check_for_updates(self.current_ver)
+            updates, message, download_url = check_for_updates(self.current_ver, self.main_window.logger)
             self.updateDetails.emit([updates, message, download_url])
             return
         download_request = {
@@ -192,5 +180,8 @@ class UpdateWorker(QThread):
         self.main_window.download_manager.add_download(download_request)
 
     def handle_downloaded(self, task):
-        initiate_self_replacement(task.save_path)
+        try:
+            initiate_self_replacement(task.save_path)
+        except Exception as e:
+            self.main_window.logger.error(e)
         self.main_window.quit_app()
