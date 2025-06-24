@@ -50,7 +50,7 @@ def format_bytes(size_bytes):
 def get_speed(history):
     """Calculate average speed over last 30 seconds"""
     if len(history) < 2:
-        return 0  # Not enough data
+        return 0
         
     # Get the oldest and most recent data points
     oldest_time, oldest_downloaded = history[0]

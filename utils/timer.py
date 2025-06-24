@@ -17,6 +17,21 @@ class ProgressTimer:
         self.elapsed_time = 0.0
         self._state = 'stopped' # Initial state
 
+    def to_dict(self):
+        """Converts the ProgressTimer object to a dictionary for serialization."""
+        return {
+            'start_time': self.start_time,
+            'elapsed_time': self.elapsed_time
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        """Creates a ProgressTimer object from a dictionary."""
+        timer = cls()
+        timer.start_time = data['start_time']
+        timer.elapsed_time = data['elapsed_time']
+        return timer
+
     def start(self):
         """
         Starts the timer. If the timer is already running, it does nothing.
@@ -67,7 +82,7 @@ class ProgressTimer:
         if self._state == 'running':
             # Add remaining time if it was running
             self.elapsed_time += time.time() - self.start_time
-        
+
         final_elapsed = self.elapsed_time # Store final value before resetting
 
         self._state = 'stopped'

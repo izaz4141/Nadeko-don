@@ -17,17 +17,19 @@ from utils.helpers import (
     resource_path, format_bytes, get_speed,
     check_default, format_durasi
 )
-from utils.constants import DEFAULT_CONFIG
+from utils.constants import DEFAULT_CONFIG, CONFIG_DIRECTORY
+from utils import db
 
 import os, json, logging
 from logging.handlers import RotatingFileHandler
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Nadeko~don")
         self.setGeometry(100, 100, 800, 500)
-        self.config_dir = os.path.expanduser("~/.config/Nadeko~don")
+        self.config_dir = CONFIG_DIRECTORY
         self.setup_config()
         self.init_ui()
         self.setup_system_tray()
@@ -211,6 +213,9 @@ class MainWindow(QMainWindow):
         self.server.url_received.connect(self.handle_received_url)
         self.server.start()
 
+        # Setup database
+        db.build()
+
         # Setup download manager in a separate QThread
         self.download_manager = DownloadManager(self)
         # Connect to the update_download_table slot, which now expects list data
@@ -223,7 +228,7 @@ class MainWindow(QMainWindow):
         # Timer to periodically refresh the download table UI
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(lambda: self.download_manager._update_table())
-        self.refresh_timer.start(500)  # Update UI every 500ms
+        self.refresh_timer.start(1000) # In milisec
 
     def setup_system_tray(self):
         self.sys_tray = QSystemTrayIcon(self)
@@ -260,13 +265,7 @@ class MainWindow(QMainWindow):
     def handle_received_url(self, url):
         """Slot to handle URLs received from the server thread (e.g., browser extension)."""
         self.url_input.setText(url)
-        self.sys_tray.showMessage(
-            "Nadeko~don",
-            f"URL received from extension: {url}",
-            QSystemTrayIcon.MessageIcon.Information,
-            2000
-        )
-        self.handle_download() # Automatically trigger download process
+        self.handle_download()
 
     def handle_download(self):
         """Initiates the download process by showing the DownloadPopup."""
@@ -276,6 +275,7 @@ class MainWindow(QMainWindow):
             return
 
         self.popup = DownloadPopup(self, url)
+        self.popup.finished.connect(self.popup.deleteLater)
         self.popup.show()
 
     def handle_error(self, message):
@@ -386,7 +386,6 @@ class MainWindow(QMainWindow):
 
         if option.clickedButton() == delAll:
             os.remove(path)
-            if os.path.exists(f"{path}.metadata"): os.remove(f"{path}.metadata")
             self.download_manager.remove_download(task)
         elif option.clickedButton() == removeOnly:
             self.download_manager.remove_download(task)
@@ -406,6 +405,7 @@ class MainWindow(QMainWindow):
         self.cpopup = ConfigPopup(self)
         self.cpopup.speed_changed.connect(self.download_manager.set_max_speed)
         self.cpopup.workers_changed.connect(self.download_manager.set_max_workers)
+        self.cpopup.finished.connect(self.cpopup.deleteLater)
         self.cpopup.show()
 
     def show_window(self):
@@ -434,9 +434,9 @@ class MainWindow(QMainWindow):
 
     def quit_app(self):
         """Performs a graceful shutdown of all threads and the application."""
-        self.server.stop() # Stop the server thread
-        self.download_manager.shutdown() # Tell download manager to stop all tasks
-        self.download_manager_thread.exit() # Exit the download manager's thread event loop
-        self.download_manager_thread.wait(2000) # Wait for thread to finish (optional timeout)
-        self.sys_tray.hide() # Hide system tray icon
-        QApplication.quit() # Quit the application
+        self.server.stop()
+        self.download_manager.shutdown()
+        self.download_manager_thread.exit()
+        self.download_manager_thread.wait(2000)
+        self.sys_tray.hide()
+        QApplication.quit()

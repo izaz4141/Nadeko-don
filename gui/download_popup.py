@@ -16,6 +16,7 @@ import requests, os
 
 
 class DownloadPopup(QDialog):
+    finished = Signal()
     def __init__(self, parent, url):
         super(DownloadPopup, self).__init__(parent)
         self.setWindowTitle("Nadeko~don: Download Popup")
@@ -28,6 +29,7 @@ class DownloadPopup(QDialog):
         self.download_request = None # Stores the prepared download request for DownloadManager
 
         self.init_ui()
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
 
         self.urlInfo = InfoFetcher(url)
         self.urlInfo.infoReady.connect(self.get_urlInfo)
@@ -252,6 +254,7 @@ class DownloadPopup(QDialog):
         if self.thumbnail_thread and self.thumbnail_thread.isRunning():
             self.thumbnail_thread.quit()
             self.thumbnail_thread.wait(1000)
+            self.thumbnail_thread.deleteLater()
 
         self.thumbnail_thread = ThumbnailLoader(url)
         self.thumbnail_thread.thumbnail_loaded.connect(self.handle_thumbnail_loaded)
@@ -269,11 +272,17 @@ class DownloadPopup(QDialog):
             Qt.TransformationMode.SmoothTransformation
         )
         self.thumbnail_label.setPixmap(scaled_pixmap)
+        self.thumbnail_thread.quit()
+        self.thumbnail_thread.wait(1000)
+        self.thumbnail_thread.deleteLater()
 
     @Slot(str)
     def handle_thumbnail_error(self, message):
         """Handle thumbnail loading errors."""
         self.thumbnail_label.setText(f"Error loading thumbnail: {message}")
+        self.thumbnail_thread.quit()
+        self.thumbnail_thread.wait(1000)
+        self.thumbnail_thread.deleteLater()
 
     @Slot(bool, int, str)
     def get_urlInfo(self, downloadable, size, filename):
@@ -281,11 +290,16 @@ class DownloadPopup(QDialog):
         Receives information about the URL from InfoFetcher thread.
         Decides whether to treat it as a direct download or a YTDL source.
         """
+        self.urlInfo.quit()
+        self.urlInfo.wait(1000)
+        self.urlInfo.deleteLater()
+
         if not downloadable:
             # It's not a simple downloadable file, try YTDL
             if self.ytdl_thread and self.ytdl_thread.isRunning():
                 self.ytdl_thread.stop()
                 self.ytdl_thread.wait(1000)
+                self.ytdl_thread.deleteLater()
 
             self.ytdl_thread = YTDL_Thread(self.main_window.config, self.url)
             self.ytdl_thread.info_ready.connect(self.handle_ytdl_video_info)
@@ -400,6 +414,7 @@ class DownloadPopup(QDialog):
         # Proceed with adding download if not cancelled or if overwrite was successful
         if self.download_request:
             self.main_window.download_manager.add_download(self.download_request)
+            self.finished.emit()
             self.close()
 
 

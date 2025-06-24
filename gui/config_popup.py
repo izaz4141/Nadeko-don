@@ -11,6 +11,7 @@ from utils.updater import UpdateWorker
 import os
 
 class ConfigPopup(QDialog):
+    finished = Signal()
     speed_changed = Signal()
     workers_changed = Signal()
     def __init__(self, parent):
@@ -184,5 +185,7 @@ class ConfigPopup(QDialog):
             self.speed_changed.emit()
         if max_workers != prev_workers:
             self.workers_changed.emit()
+
+        self.finished.emit()
 
         self.close()
