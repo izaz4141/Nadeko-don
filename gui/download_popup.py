@@ -352,47 +352,50 @@ class DownloadPopup(QDialog):
             # # Format id of selected streams for yt-dlp download fallback
             video_id = self.video_formats[self.video_select.currentIndex()][3] if selected_video_url else None
             audio_id = self.audio_formats[self.audio_select.currentIndex()][3] if selected_audio_url else None
+            video_size = self.video_formats[self.video_select.currentIndex()][2] if selected_video_url else 0
+            audio_size = self.audio_formats[self.audio_select.currentIndex()][2] if selected_audio_url else 0
 
             urls_to_download = []
             formats_id = []
+            temp_path = []
+            total_size = []
             if selected_video_url:
                 urls_to_download.append(selected_video_url)
                 formats_id.append(video_id)
+                temp_path.append('tmpv')
+                total_size.append(video_size)
             if selected_audio_url:
                 urls_to_download.append(selected_audio_url)
                 formats_id.append(audio_id)
-            formats_id = "+".join(formats_id)
+                temp_path.append('tmpa')
+                total_size.append(audio_size)
 
             if not urls_to_download:
                 QMessageBox.warning(self, "No Stream Selected", "Please select at least one video or audio stream to download.")
                 return
 
-            # Calculate total size of selected streams for display/info
-            video_size = self.video_formats[self.video_select.currentIndex()][2] if selected_video_url else 0
-            audio_size = self.audio_formats[self.audio_select.currentIndex()][2] if selected_audio_url else 0
-            total_size = video_size + audio_size
 
             self.download_request = {
                 'type': 'ytdl',
                 'items': [
                     {
-                        'url': urls_to_download,
+                        'url': urls_to_download[i],
                         'original_url': self.url,
-                        'format_id': formats_id,
-                        'path': full_save_path,
-                        'filesize': total_size
-                    }
+                        'format_id': formats_id[i],
+                        'path': f"{full_save_path}.{temp_path[i]}" if len(urls_to_download) > 1 else full_save_path,
+                        'filesize': total_size[i]
+                    } for i in range(len(urls_to_download))
                 ]
             }
-            if total_size > 0:
-                self.filesize.setText(format_bytes(total_size))
+
+            if sum(total_size) > 0:
+                self.filesize.setText(format_bytes(sum(total_size)))
             else:
                 self.filesize.setText('Unknown Sizes')
 
-        # If not YTDL, download_request was already prepared by get_urlInfo
-        # Ensure the path is updated to the latest user input
-        if self.download_request and self.download_request['items']:
+        elif self.download_request['type'] == 'single':
             self.download_request['items'][0]['path'] = full_save_path
+
 
         # Handle file existence and user choice (resume/overwrite)
         if os.path.exists(full_save_path):
