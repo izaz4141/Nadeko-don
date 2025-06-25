@@ -5,14 +5,17 @@ from PySide6.QtCore import (
 from PySide6.QtWidgets import QSystemTrayIcon, QMessageBox
 
 from utils.ffmpeg import combine_video_audio, check_ffmpeg_in_path
-from utils.helpers import is_m3u8_url, extract_size_info, pre_allocate_file
+from utils.helpers import (
+    is_m3u8_url, extract_size_info, 
+    pre_allocate_file, get_existing_size,
+    create_session
+)
 from utils.timer import ProgressTimer
 from utils import db
 
 import os, time, requests, subprocess, threading, math, json, uuid
 from collections import deque
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+
 
 class DownloadTask(QObject):
     """
@@ -38,7 +41,7 @@ class DownloadTask(QObject):
         super().__init__()
         self.id = uuid.uuid4().hex
         self.items = items
-        self.urls = items['urls']
+        self.url = items['url']
         self.save_path = items['path']
         self.basename = os.path.basename(items['path'])
         self.max_connections = max_connections
@@ -46,7 +49,6 @@ class DownloadTask(QObject):
         self.status = "Queued"
         self.downloaded = 0
         self.total_size = 0
-        self.speed = 0
         self.timer = ProgressTimer()
         self.history = deque(maxlen=10)
         self.metadata = {}
@@ -60,9 +62,6 @@ class DownloadTask(QObject):
         self.mutex = QMutex()
         self.condition = threading.Condition()
 
-        self.ytdl = items['type'] == 'ytdl'
-        self.start_time = None
-
         self._current_allowed_speed_bps = float('inf')
 
         self.part_threads = []
@@ -72,7 +71,7 @@ class DownloadTask(QObject):
         self.part_lock = threading.Lock()
         self.completed_parts = 0
 
-        self.session = self.create_session(["GET", "HEAD"])
+        self.session = create_session(["GET", "HEAD"])
 
     def to_dict(self) -> dict:
         """Converts the DownloadTask object to a dictionary for database storage."""
@@ -80,10 +79,10 @@ class DownloadTask(QObject):
         with QMutexLocker(self.mutex):
             return {
                 'id': self.id,
-                'items': self.items, # This will be JSON dumped by the DB manager
+                'items': self.items, 
                 'downloaded': self.downloaded,
                 'total_size': self.total_size,
-                'timer': self.timer.to_dict(), # Serialize ProgressTimer to dict,
+                'timer': self.timer.to_dict(),
                 'metadata': self.metadata,
                 'status': self.status
             }
@@ -167,9 +166,9 @@ class DownloadTask(QObject):
         Accessed by DownloadManager (GUI thread). Requires mutex.
         """
         with QMutexLocker(self.mutex):
-            self._set_status("Downloading")
             self._paused.clear()
             self._canceled.clear()
+            self._set_status("Downloading")
 
     def pause(self):
         """
@@ -192,6 +191,7 @@ class DownloadTask(QObject):
         with QMutexLocker(self.mutex):
             if self.status in ["Paused", "Queued"]:
                 self._paused.clear()
+                self.history.clear()
                 self._set_status("Downloading")
                 with self.condition:
                     self.condition.notify_all()
@@ -223,21 +223,6 @@ class DownloadTask(QObject):
                     self.condition.notify_all()
                 self.timer.pause()
 
-    def create_session(self, methods: list):
-        """
-        Creates a requests.Session with a retry strategy for robust HTTP requests.
-        """
-        session = requests.Session()
-        retry_strategy = Retry(
-            total=5,
-            backoff_factor=10,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=methods
-        )
-        adapter = HTTPAdapter(max_retries=retry_strategy)
-        session.mount("http://", adapter)
-        session.mount("https://", adapter)
-        return session
 
     def download(self):
         """
@@ -246,20 +231,16 @@ class DownloadTask(QObject):
         """
         if self.status == "Completed":
             return
-        self.timer.start()
+        if not self.timer.start_time:
+            self.timer.start()
         try:
             self.insert_database(self.to_dict())
-            for i, url in enumerate(self.urls):
-                save_path_for_url = self._get_save_path(i)
-                self._download_url(url, save_path_for_url)
+            self._download_url()
 
             if self._canceled.is_set():
                 return
 
-            if self.ytdl:
-                self._combine_ytdl_files()
-
-            self.total_size = self._get_existing_size(self.save_path)
+            self.total_size = get_existing_size(self.save_path)
 
             self._handle_success()
 
@@ -272,35 +253,6 @@ class DownloadTask(QObject):
         Accessed by both worker and GUI threads.
         """
         self.status = status
-
-    def _get_save_path(self, index):
-        """
-        Determines the specific save path for a given URL index.
-        For YTDL type downloads, it appends '.video' or '.audio' extensions.
-        """
-        if self.ytdl:
-            file_type = 'video' if index == 0 else 'audio'
-            return f"{self.save_path}.{file_type}"
-        return self.save_path
-
-    def _combine_ytdl_files(self):
-        """
-        Combines downloaded video and audio files (for YTDL tasks).
-        This is an internal, sequential operation within the worker thread.
-        """
-        video_path = f"{self.save_path}.video"
-        audio_path = f"{self.save_path}.audio"
-        if os.path.exists(video_path) and os.path.exists(audio_path):
-            try:
-                combine_video_audio(video_path, audio_path, self.save_path)
-                os.remove(video_path)
-                os.remove(audio_path)
-            except Exception as e:
-                raise Exception(f"Failed to combine YTDL video and audio: {e}")
-        elif os.path.exists(video_path) and not os.path.exists(audio_path):
-            os.rename(video_path, self.save_path)
-        elif os.path.exists(audio_path) and not os.path.exists(video_path):
-            os.rename(audio_path, self.save_path)
 
 
     def _handle_success(self):
@@ -325,29 +277,29 @@ class DownloadTask(QObject):
         self.insert_database(self.to_dict())
         self.error_occurred.emit(self, str(exception))
 
-    def _download_url(self, url, save_path):
+    def _download_url(self):
         """
         Dispatches to the appropriate download method based on whether the URL
         is an HLS (M3U8) stream or a regular HTTP file.
         """
-        if is_m3u8_url(url):
+        if is_m3u8_url(self.url):
             if check_ffmpeg_in_path():
-                self._download_hls_stream(url, save_path)
+                self._download_hls_stream()
             else:
                 raise Exception("Error: 'ffmpeg' executable not found in system PATH. Please install FFmpeg or add it to your PATH.")
         else:
-            self._download_http_file(url, save_path)
+            self._download_http_file()
 
-    def _download_http_file(self, url, save_path):
+    def _download_http_file(self):
         """
         Handles HTTP file downloads. It first retrieves metadata, then prepares the file,
         and finally dispatches to either multi-threaded or single-threaded download logic.
         """
-        self._get_url_metadata(url)
-        self._prepare_file(save_path)
-        self._downloadThreads(url, save_path)
+        self._get_url_metadata()
+        self._prepare_file()
+        self._downloadThreads()
 
-    def _downloadThreads(self, url, save_path):
+    def _downloadThreads(self):
         """
         Manages the multi-threaded download process, spawning and monitoring individual
         part threads. It handles pausing, resuming, and cancellation of the overall download.
@@ -363,7 +315,7 @@ class DownloadTask(QObject):
                 if part['status'] != 'complete' and part['status'] != 'failed':
                     thread = threading.Thread(
                         target=self._download_part,
-                        args=(url, save_path, part_index)
+                        args=(part_index,)
                     )
                     thread.daemon = True # Allow main program to exit even if threads are running
                     self.part_threads.append(thread)
@@ -393,8 +345,6 @@ class DownloadTask(QObject):
                 with self.condition:
                     while self._paused.is_set() and not self._canceled.is_set():
                         self.condition.wait()
-                if self._canceled.is_set():
-                    break
 
             current_time = time.time()
             if current_time - last_save_time >= save_interval:
@@ -414,7 +364,7 @@ class DownloadTask(QObject):
 
         self._save_metadata() # Final save of metadata
 
-    def _download_part(self, url, save_path, part_index):
+    def _download_part(self, part_index):
         """
         Downloads a specific byte range (part) of the file in a separate thread.
         It uses `part_lock` for part-specific info and `progress_lock` for global downloaded bytes.
@@ -429,7 +379,6 @@ class DownloadTask(QObject):
             mode = "r+b"
             start_byte_offset = part['start'] + part['downloaded']
             end_byte_offset = part['end']
-
             # Construct Range header for partial content request.
             headers = {'Range': f'bytes={start_byte_offset}-{end_byte_offset}'}
         else:
@@ -451,7 +400,7 @@ class DownloadTask(QObject):
                     mode = 'ab'
 
         try:
-            with self.session.get(url, headers=headers, stream=True) as response:
+            with self.session.get(self.url, headers=headers, stream=True) as response:
                 response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
                 if self.is_multithreaded:
                     # Check if server responded with full content (200) despite a range request.
@@ -466,7 +415,7 @@ class DownloadTask(QObject):
                         mode = 'wb'
                         self.downloaded = 0
 
-                with open(save_path, mode) as f:
+                with open(self.save_path, mode) as f:
                     if self.is_multithreaded:
                         f.seek(start_byte_offset)
 
@@ -502,18 +451,13 @@ class DownloadTask(QObject):
                 part['error'] = str(e)
             self.cancel() # Propagate cancellation to the main task.
 
-    def _get_existing_size(self, save_path):
-        """Returns the size of an existing file at save_path, or 0 if it doesn't exist."""
-        size = os.path.getsize(save_path) if os.path.exists(save_path) else 0
-        return size
-
-    def _get_url_metadata(self, url):
+    def _get_url_metadata(self):
         """
         Performs a HEAD request to get file size and check for 'Accept-Ranges' support.
         If metadata retrieval fails, it defaults to unknown size and no range support.
         """
         try:
-            response = self.session.head(url, allow_redirects=True, timeout=30)
+            response = self.session.head(self.url, allow_redirects=True, timeout=30)
             response.raise_for_status()
             self.total_size = int(response.headers.get('content-length', 0))
             self.accept_ranges_support = response.headers.get('accept-ranges', '').lower() == 'bytes'
@@ -522,17 +466,16 @@ class DownloadTask(QObject):
             self.accept_ranges_support = False
             raise Exception(f"Task '{self.basename}': Warning: Failed to get URL metadata, assuming 0 total size and no range support: {e}")
 
-    def _prepare_file(self, save_path):
+    def _prepare_file(self):
         """
         Prepares the target file for download. This involves creating directories,
         handling existing files (especially for forced overwrites), loading/saving
         metadata for resumed multi-part downloads, and pre-allocating file space.
         It also determines if the download should be multi-threaded or single-threaded.
         """
-        self.current_save_path = save_path
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        os.makedirs(os.path.dirname(self.save_path), exist_ok=True)
 
-        existing_file_size_on_disk = self._get_existing_size(save_path)
+        existing_file_size_on_disk = get_existing_size(self.save_path)
 
         self.metadata = self._load_metadata()
 
@@ -564,10 +507,10 @@ class DownloadTask(QObject):
                 self.downloaded = sum(p['downloaded'] for p in self.part_info if p['status'] != 'failed')
 
                 if existing_file_size_on_disk != self.total_size:
-                    pre_allocate_file(save_path, self.total_size)
+                    pre_allocate_file(self.save_path, self.total_size)
             else:
                 # Start new multi-threaded download
-                pre_allocate_file(save_path, self.total_size)
+                pre_allocate_file(self.save_path, self.total_size)
                 self.downloaded = 0
                 self.part_info = []
                 self.completed_parts = 0
@@ -597,15 +540,15 @@ class DownloadTask(QObject):
                 self.downloaded = existing_file_size_on_disk
             else:
                 # If file exists and is larger than expected, clear it.
-                if os.path.exists(save_path) and (self.total_size > 0 and existing_file_size_on_disk > self.total_size):
+                if os.path.exists(self.save_path) and (self.total_size > 0 and existing_file_size_on_disk > self.total_size):
                     try:
-                        os.remove(save_path)
+                        os.remove(self.save_path)
                     except OSError as e:
-                        raise Exception(f"Failed to clear existing file {save_path} for single-threaded download: {e}")
+                        raise Exception(f"Failed to clear existing file {self.save_path} for single-threaded download: {e}")
 
                 # Create a new empty file if it doesn't exist
-                if not os.path.exists(save_path):
-                    open(save_path, 'wb').close()
+                if not os.path.exists(self.save_path):
+                    open(self.save_path, 'wb').close()
                     self.downloaded = 0
                     
             self.num_parts = 1
@@ -680,25 +623,20 @@ class DownloadTask(QObject):
             time.sleep(max(0, sleep_time))
 
 
-    def _download_hls_stream(self, url, save_path):
+    def _download_hls_stream(self):
         """
         Downloads an HLS (M3U8) stream using an external FFmpeg process.
         Monitors FFmpeg's output for progress and handles pause/cancel events.
         """
-        if os.path.exists(save_path):
+        if os.path.exists(self.save_path):
             try:
-                os.remove(save_path)
+                os.remove(self.save_path)
             except OSError as e:
                 raise Exception(f"Failed to clear existing file for HLS download: {e}")
 
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        os.makedirs(os.path.dirname(self.save_path), exist_ok=True)
 
-        ext = os.path.splitext(self.save_path)[1].lstrip('.')
-        if not ext:
-            ext = 'mp4'
-            
-        cmd = self._build_ffmpeg_command(url, save_path, ext)
-
+        cmd = self._build_ffmpeg_command()
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -710,28 +648,35 @@ class DownloadTask(QObject):
         )
 
         try:
-            self._monitor_ffmpeg_process(process, save_path)
+            self._monitor_ffmpeg_process(process)
         except Exception as e:
-            self._cleanup_ffmpeg_process(process, save_path)
+            self._cleanup_ffmpeg_process(process)
             raise Exception(f"HLS download failed during monitoring: {e}")
         finally:
-            self._cleanup_ffmpeg_process(process, save_path)
+            self._cleanup_ffmpeg_process(process)
 
-    def _build_ffmpeg_command(self, url, save_path, ext):
+    def _build_ffmpeg_command(self):
         """Constructs the FFmpeg command for HLS download based on URL and desired output path/extension."""
+        if self.save_path.endswith('.tmpa') or self.save_path.endswith('.tmpv'):
+            ext = os.path.basename(self.save_path).split('.')[-2]
+        else:
+            ext = os.path.splitext(self.save_path)[1].lstrip('.')
+        if not ext:
+            ext = 'mp4'
+
         cmd = [
             'ffmpeg',
-            '-i', url,
+            '-i', self.url,
             '-c', 'copy', # Copy audio/video streams without re-encoding
             '-f', ext,    # Force output format
-            save_path
+            self.save_path
         ]
         if ext == 'mp4':
             # Specific bitstream filter for AAC audio when outputting to MP4.
             cmd.extend(['-bsf:a', 'aac_adtstoasc'])
         return cmd
 
-    def _monitor_ffmpeg_process(self, process, save_path):
+    def _monitor_ffmpeg_process(self, process):
         """
         Monitors FFmpeg's stdout/stderr output to extract progress information.
         It also checks for global pause/cancel flags and manages the FFmpeg process state.
@@ -789,7 +734,7 @@ class DownloadTask(QObject):
                     return
             raise Exception(f"FFmpeg failed with code {retcode} for {self.basename}")
 
-    def _cleanup_ffmpeg_process(self, process, save_path):
+    def _cleanup_ffmpeg_process(self, process):
         """
         Ensures the FFmpeg process is terminated.
         If the download was canceled, it also attempts to remove the partially downloaded file.
@@ -837,6 +782,7 @@ class DownloadManager(QObject):
         """Initializes the DownloadManager with a reference to the main application window (parent)."""
         super().__init__()
         self.tasks = deque() # Queue of DownloadTask objects
+        self.batches = {} # Currently only for combining ytdl video and audio
         self.active_tasks = {} # Dictionary of currently active workers, indexed by task ID
         self.paused_tasks = {} # Dictionary of currently paused workers, indexed by task ID
         # This mutex protects `self.tasks` and `self.active_tasks` from concurrent access
@@ -882,54 +828,67 @@ class DownloadManager(QObject):
         if not request_type or not isinstance(request_items_list, list) or not request_items_list:
             raise ValueError("Invalid download request structure. 'type' and non-empty 'items' list are required.")
 
-        if request_type == 'single' or request_type == 'ytdl':
+        if request_type == 'single':
             if len(request_items_list) != 1:
                 raise ValueError(f"'{request_type}' type expects exactly one item in 'items' list.")
 
             item_data = request_items_list[0]
-            urls_for_task = item_data.get('url')
-            if not isinstance(urls_for_task, list):
-                urls_for_task = [urls_for_task]
-
             task_items = {
-                'urls': urls_for_task,
+                'url': item_data.get('url'),
                 'path': item_data.get('path'),
                 'type': request_type,
                 'config': self.main_window.config
             }
-            if request_type == 'ytdl':
-                task_items['original_url'] = item_data['original_url']
-                task_items['format_id'] = item_data['format_id']
 
             task = DownloadTask(task_items, self.main_window.config.get('concurrency', 8))
             with QMutexLocker(self.mutex):
                 self.tasks.append(task)
 
-        elif request_type == 'batch':
-            for i, item_data in enumerate(request_items_list):
-                urls_for_task = item_data.get('url')
-                if not isinstance(urls_for_task, list):
-                    urls_for_task = [urls_for_task]
+        elif request_type == 'ytdl':
+            batches_id = uuid.uuid4().hex
+            if len(request_items_list) > 1:
+                self.batches[batches_id] = []
+            for item_data in request_items_list:
+                task_items = {
+                    'batch_id': batches_id,
+                    'url': item_data.get('url'),
+                    'path': item_data.get('path'),
+                    'type': request_type,
+                    'config': self.main_window.config,
+                    'original_url': item_data['original_url'],
+                    'format_id': item_data['format_id']
+                }
+                task = DownloadTask(task_items, self.main_window.config.get('concurrency', 8))
+                with QMutexLocker(self.mutex):
+                    self.tasks.append(task)
+                    if len(request_items_list) > 1:
+                        self.batches[batches_id].append(task)
 
-                specified_save_path = item_data.get('path')
+        elif request_type == 'batch':
+            for item_data in request_items_list:
+                batches_id = uuid.uuid4().hex
+                if len(request_items_list) > 1:
+                    self.batches[batches_id] = []
 
                 task_items = {
-                    'urls': urls_for_task,
-                    'path': specified_save_path,
-                    'type': 'batch',
+                    'batch_id': batches_id,
+                    'url': item_data.get('url'),
+                    'path': item_data.get('path'),
+                    'type': request_type,
                     'config': self.main_window.config
                 }
 
                 task = DownloadTask(task_items, self.main_window.config.get('concurrency', 8))
                 with QMutexLocker(self.mutex):
                     self.tasks.append(task)
+                    self.batches[batches_id].append(task)
         else:
-            raise ValueError(f"Unknown download request type: '{request_type}'. Expected 'single', 'batch', or 'ytdl'.")
+            self.main_window.logger.error(f"Download Manager: Unknown download request type: '{request_type}'. Expected 'single', 'batch', or 'ytdl'.")
 
         # Emit a snapshot of the updated queue
         with QMutexLocker(self.mutex):
             self.queue_updated.emit(self._get_current_tasks_data())
-        self.process_queue() # Attempt to start new downloads
+        self.process_queue()
 
     @Slot()
     def process_queue(self):
@@ -1007,12 +966,49 @@ class DownloadManager(QObject):
 
 
     @Slot(QObject)
-    def _handle_task_completion(self, task: QObject):
+    def _handle_task_completion(self, task: DownloadTask):
         """
         Slot to handle a DownloadTask completing successfully.
         This slot is executed on the GUI thread in response to a worker signal.
         It cleans up the task and notifies the user via system tray.
         """
+        if task.items['type'] == 'ytdl' and 'batch_id' in task.items:
+            all_finished = True
+            for t in self.batches[task.items['batch_id']]:
+                if t.status != "Completed":
+                    all_finished = False
+            if all_finished:
+                basePath = os.path.splitext(t.items['path'])[0]
+                try:
+                    combine_video_audio(f"{basePath}.tmpv",
+                                        f"{basePath}.tmpa",
+                                        basePath)
+                    os.remove(f"{basePath}.tmpv")
+                    os.remove(f"{basePath}.tmpa")
+                except Exception as e:
+                    self.main_window.logger.error(str(e))
+
+                el_time = 0
+                for t in self.batches[task.items['batch_id']]:
+                    el_time += t.timer.elapsed_time
+                    self.remove_download(t)
+                t.items['path'] = basePath
+                nt_dict = {
+                    'id': uuid.uuid4().hex,
+                    'downloaded': get_existing_size(basePath),
+                    'total_size': get_existing_size(basePath),
+                    'items': t.items,
+                    'timer': {'start_time': t.timer.start_time,
+                              'elapsed_time': el_time},
+                    'metadata': {},
+                    'status': 'Completed'
+                }
+                nt = DownloadTask.from_dict(nt_dict)
+                nt.insert_database(nt.to_dict())
+                with QMutexLocker(self.mutex):
+                    self.tasks.append(nt)
+                    del self.batches[task.items['batch_id']]
+                
 
         self._cleanup_task(task)
         self._show_tray_notification(
@@ -1127,9 +1123,6 @@ class DownloadManager(QObject):
         Removes a specific download task and cleans up its resources.
         It cancels the task first then cleans up the resources.
         """
-        if not task:
-            return
-            
         task.cancel()
         self._cleanup_task(task)
         with QMutexLocker(self.mutex):
