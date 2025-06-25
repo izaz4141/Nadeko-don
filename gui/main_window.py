@@ -46,7 +46,7 @@ class MainWindow(QMainWindow):
 
         self.play_action = QAction(
             QIcon(self.style().standardIcon(QStyle.SP_MediaPlay)),
-            "Play", self
+            "Resume", self
         )
         self.play_action.setCheckable(True)
         self.play_action.setEnabled(False)
@@ -99,7 +99,7 @@ class MainWindow(QMainWindow):
         self.download_table.setColumnCount(5)
         self.download_table.setHorizontalHeaderLabels(["Filename", "Size", "Status", "Speed", "Time"])
         self.download_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.download_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.download_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.download_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.download_table.selectionModel().selectionChanged.connect(self.handle_updateTableClicked)
         self.download_table.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -174,7 +174,7 @@ class MainWindow(QMainWindow):
             self.download_table.setItem(row, 3, speed_item)
             self.download_table.setItem(row, 4, eT_item)
 
-        self.handle_updateTableClicked(self.download_table.selectedItems())
+        # self.handle_updateTableClicked(self.download_table.selectedRanges())
         self.status_bar.showMessage(f"▼ {format_bytes(speed_sum)}/s")
 
     def setup_config(self):
@@ -294,23 +294,27 @@ class MainWindow(QMainWindow):
             self.config['save_path'] = directory
             self.update_config()
 
-    def handle_updateTableClicked(self, selected, deselected=None):
+    def handle_updateTableClicked(self, selected=None, deselected=None):
         """
         Handles selection changes in the download table.
         Enables/disables play/stop actions based on selected task status.
         """
+        selectedRanges = self.download_table.selectedRanges()
+        
+        if len(selectedRanges) > 1:
+            self.play_action.setEnabled(False)
+            self.stop_action.setEnabled(False)
+            self.delete_action.setEnabled(True)
+            return
         try:
-            row = selected.indexes()[0].row() # From selectionChanged Signal
+            row = selectedRanges[0].bottomRow()
         except Exception:
-            try:
-                row = selected[0].row() # From update_download_table
-            except Exception as e:
-                row = None
+            row = None
 
         if isinstance(row, int):
             task = self.download_manager.tasks[row]
             # Set play/pause action's checked state based on task status
-            self.play_action.setChecked(task.status in ["Paused", "Completed", "Canceled", "ERROR"])
+            self.play_action.setChecked(task.status in ["Downloading", "Queued"])
             # Update the icon based on the new checked state
             self.handle_play_toggle(self.play_action.isChecked())
 
@@ -338,14 +342,16 @@ class MainWindow(QMainWindow):
 
     def handle_play_toggle(self, checked):
         """Visually updates the play/pause icon based on the 'checked' state."""
-        if checked: # If checked (meaning 'play' state, for resuming or starting)
-            self.play_action.setIcon(
-                self.style().standardIcon(QStyle.SP_MediaPlay)
-            )
-        else: # If unchecked (meaning 'pause' state, for active downloading)
+        if checked: # If unchecked (meaning 'downloading' state, for pausing)
             self.play_action.setIcon(
                 self.style().standardIcon(QStyle.SP_MediaPause)
             )
+            self.play_action.setToolTip("Pause")
+        else: # If checked (meaning 'paused' state, for resuming or starting)
+            self.play_action.setIcon(
+                self.style().standardIcon(QStyle.SP_MediaPlay)
+            )
+            self.play_action.setToolTip("Resume")
 
     def handle_play_trigger(self, checked):
         """
@@ -358,37 +364,44 @@ class MainWindow(QMainWindow):
         row = self.download_table.selectedItems()[0].row()
         task = self.download_manager.tasks[row]
 
-        if checked: # Button is now 'Play' (checked), so it means user wants to PAUSE
-            self.download_manager.pause_download(task)
-            self.play_action.setIcon( # Update icon to 'Play' as it's now paused
-                self.style().standardIcon(QStyle.SP_MediaPlay)
-            )
-        else: # Button is now 'Pause' (unchecked), so it means user wants to RESUME
+        if checked: 
             self.download_manager.resume_download(task)
             self.play_action.setIcon( # Update icon to 'Pause' as it's now downloading
                 self.style().standardIcon(QStyle.SP_MediaPause)
             )
+        else: 
+            self.download_manager.pause_download(task)
+            self.play_action.setIcon( # Update icon to 'Play' as it's now paused
+                self.style().standardIcon(QStyle.SP_MediaPlay)
+            )
 
     def handle_delete(self):
-        if not self.download_table.selectedItems():
+        if not self.download_table.selectedIndexes():
             return
-        row = self.download_table.selectedItems()[0].row()
-        task = self.download_manager.tasks[row]
+        
+        tasks = []
+        for ran in self.download_table.selectedRanges():
+            row = ran.topRow()
+            task = self.download_manager.tasks[row]
+            tasks.append((task.save_path, self.download_manager.tasks[row]))
 
-        path = task.save_path
         option = QMessageBox(self)
         option.setText(f"Delete the selected file and remove it from the list? ")
-        option.setInformativeText(path)
+        option.setInformativeText("\n".join([item[0] for item in tasks]))
         option.setIcon(QMessageBox.Question)
         delAll = option.addButton("Delete and remove", QMessageBox.AcceptRole)
-        removeOnly = option.addButton("Remove", QMessageBox.RejectRole)
+        removeOnly = option.addButton("Remove", QMessageBox.DestructiveRole)
+        cancel_button = option.addButton("Cancel", QMessageBox.RejectRole)
+        option.setDefaultButton(delAll)
         option.exec()
 
-        if option.clickedButton() == delAll:
-            os.remove(path)
-            self.download_manager.remove_download(task)
-        elif option.clickedButton() == removeOnly:
-            self.download_manager.remove_download(task)
+        if option.clickedButton() == cancel_button:
+            return
+        for path, task in tasks:
+            if os.path.exists(path) and option.clickedButton() == delAll:
+                os.remove(path)
+            if option.clickedButton() == delAll or option.clickedButton() == removeOnly:
+                self.download_manager.remove_download(task)
 
 
     def show_contextMenu(self, pos:QPoint):
