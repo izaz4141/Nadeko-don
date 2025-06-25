@@ -1,3 +1,5 @@
+from PySide6.QtCore import QObject, Signal
+
 import json, threading
 from sqlite3 import connect, Row
 
@@ -6,63 +8,116 @@ from utils.constants import CONFIG_DIRECTORY, SQL_BUILD
 DB_PATH = f"{CONFIG_DIRECTORY}/nandeshiko-database.db"
 DB_LOCK = threading.Lock()
 
-cxn = connect(DB_PATH, check_same_thread=False)
-cxn.row_factory = Row
-cur = cxn.cursor()
+def build(cxn, cur):
+    scriptexec(cur, SQL_BUILD)
+    commit(cxn)
 
-def with_commit(func):
-    def inner(*args, **kwargs):
-        func(*args, **kwargs)
-        commit()
-
-    return inner
-
-@with_commit
-def build():
-    scriptexec(SQL_BUILD)
-
-def commit():
+def commit(cxn):
     cxn.commit()
 
-# def autosave(sched):
-#     sched.add_job(commit, CronTrigger(second=29))
-
-def close():
+def close(cxn):
     cxn.close()
 
-def field(command, *values):
+def field(cur, command, *values):
     cur.execute(command, tuple(values))
     fetch = cur.fetchone()
     if fetch is not None:
         return fetch[0]
 
-def record(command, *values):
+def record(cur, command, *values):
     cur.execute(command, tuple(values))
     return cur.fetchone()
 
-def records(command, *values):
+def records(cur, command, *values):
     cur.execute(command, tuple(values))
     return cur.fetchall()
 
-def column(command, *values):
+def column(cur, command, *values):
     cur.execute(command, tuple(values))
     return [item[0] for item in cur.fetchall()]
 
-def execute(command, *values):
+def execute(cur, command, *values):
     cur.execute(command, tuple(values))
 
-def multiexec(command,valueset):
+def multiexec(cur, command,valueset):
     cur.executemany(command, valueset)
 
-def scriptexec(script):
+def scriptexec(cur, script):
     cur.executescript(script)
 
 
 def _row_to_dict(row: Row) -> dict:
     """Converts a SQLite row object to a dictionary, handling type conversions for the new schema."""
     task_dict = dict(row)
-    # Convert JSON strings back to Python objects
-    task_dict['items'] = json.loads(task_dict['items'])
-    task_dict['timer'] = json.loads(task_dict['timer'])
-    task_dict['metadata'] = json.loads(task_dict['metadata'])
+    task_items = task_dict.items()
+    for key, value in task_items:
+        if isinstance(value, str): # Handle JSON
+            try:
+                jeson = json.loads(value)
+                task_dict[key] = jeson
+            except Exception:
+                pass
     return task_dict
+
+class DownloadDB(QObject):
+
+    def __init__(self, parent):
+        super().__init__()
+        self.cxn = connect(DB_PATH, check_same_thread=False)
+        self.cxn.row_factory = Row
+        self.cur = self.cxn.cursor()
+        self.db_lock = threading.Lock()
+        self.main_window = parent
+
+        with self.db_lock:
+            build(self.cxn, self.cur)
+
+        self.main_window.threadReady.connect(self.connect_signal)
+
+    def insert_or_update(self, task_data:dict):
+        sql = """
+            INSERT INTO downloads (
+                id, items, downloaded, total_size, timer, metadata, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                items=excluded.items,
+                downloaded=excluded.downloaded,
+                total_size=excluded.total_size,
+                timer=excluded.timer,
+                metadata=excluded.metadata,
+                status=excluded.status
+        """
+        try:
+            with self.db_lock:
+                execute(self.cur, sql, 
+                    task_data['id'],
+                    json.dumps(task_data['items']), # Store dict as JSON string
+                    task_data['downloaded'],
+                    task_data['total_size'],
+                    json.dumps(task_data['timer']), # Store timer dict as JSON string
+                    json.dumps(task_data['metadata']),
+                    task_data['status']
+                )
+                commit(self.cxn)
+        except Exception as e:
+            self.main_window.logger.error(f"[DownloadDB] {str(e)}")
+
+    def delete(self, task_id):
+        try:
+            with self.db_lock:
+                execute(self.cur, "DELETE FROM downloads WHERE id = ?", task_id)
+                commit(self.cxn)
+        except Exception as e:
+            self.main_window.logger.error(f"[DownloadDB] {str(e)}")
+
+    def fetchone(self, column, task_id):
+        data = field(self.cur, "SELECT metadata from downloads WHERE id = ?", task_id)
+        return data
+
+    def fetchall(self):
+        datas = records(self.cur, "SELECT * from downloads")
+        return datas
+
+    def connect_signal(self):
+        self.main_window.download_manager.db_update.connect(self.insert_or_update)
+        self.main_window.download_manager.db_delete.connect(self.delete)

@@ -25,6 +25,7 @@ class DownloadTask(QObject):
     """
     finished = Signal(QObject)
     error_occurred = Signal(QObject, str)
+    db_update = Signal(dict)
 
     def __init__(self, items, max_connections=8):
         """
@@ -56,9 +57,6 @@ class DownloadTask(QObject):
         self._paused = threading.Event()
         self._canceled = threading.Event()
 
-        # Mutex for protecting shared state within this DownloadTask instance.
-        # This state is accessed by the worker thread (running self.download) and the
-        # GUI thread (via calls from DownloadManager like pause/resume/cancel or UI queries).
         self.mutex = QMutex()
         self.condition = threading.Condition()
 
@@ -122,33 +120,7 @@ class DownloadTask(QObject):
             task_data (dict): A dictionary representing the DownloadTask's persistent attributes.
                                 Must include an 'id' key.
         """
-        sql = """
-        INSERT INTO downloads (
-            id, items, downloaded, total_size, timer, metadata, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            items=excluded.items,
-            downloaded=excluded.downloaded,
-            total_size=excluded.total_size,
-            timer=excluded.timer,
-            metadata=excluded.metadata,
-            status=excluded.status
-        """
-
-        try:
-            with db.DB_LOCK:
-                db.execute(sql, 
-                    task_data['id'],
-                    json.dumps(task_data['items']), # Store dict as JSON string
-                    task_data['downloaded'],
-                    task_data['total_size'],
-                    json.dumps(task_data['timer']), # Store timer dict as JSON string
-                    json.dumps(task_data['metadata']),
-                    task_data['status']
-                )
-                db.commit()
-        except Exception as e:
-            raise Exception(f"Task `{self.basename}`: Error Database {task_data.get('id')}: {e}")
+        self.db_update.emit(task_data)
 
     @Slot(float)
     def _update_allowed_speed(self, new_speed_bps: float):
@@ -477,7 +449,6 @@ class DownloadTask(QObject):
 
         existing_file_size_on_disk = get_existing_size(self.save_path)
 
-        self.metadata = self._load_metadata()
 
         self.is_multithreaded = False
 
@@ -580,17 +551,6 @@ class DownloadTask(QObject):
             'downloaded': self.downloaded,
             'timestamp': time.time()
         }
-
-    def _load_metadata(self):
-        """Loads download metadata from file if available, handling potential corruption."""
-        try:
-            with db.DB_LOCK:
-                metadata = db.field("SELECT metadata from downloads WHERE id = ?", self.id)
-                return json.loads(metadata)
-        except Exception as e:
-            raise Exception(f"Task '{self.basename}': Error loading metadata, deleting corrupted file: {e}")
-        return None
-
 
     def _update_download_progress(self, chunk_size):
         """
@@ -776,7 +736,8 @@ class DownloadManager(QObject):
     """
     # Signal emitted when the queue state changes, carrying a snapshot of task data.
     queue_updated = Signal(list)
-    task_finished = Signal(DownloadTask)
+    db_update = Signal(dict)
+    db_delete = Signal(str)
 
     def __init__(self, parent):
         """Initializes the DownloadManager with a reference to the main application window (parent)."""
@@ -790,10 +751,14 @@ class DownloadManager(QObject):
         self.mutex = QMutex()
         self.main_window = parent # Reference to the main application window
 
-        self.load_downloads()
+        self.main_window.threadReady.connect(self.load_downloads)
+        self.main_window.addDownload.connect(self.add_download)
+        self.main_window.delDownload.connect(self.remove_download)
 
     def load_downloads(self):
-        all_data = db.records("SELECT * from downloads")
+        all_data = self.main_window.db_manager.fetchall()
+        if not all_data:
+            return
         for data in all_data:
             data = db._row_to_dict(data)
             task = DownloadTask.from_dict(data)
@@ -839,7 +804,6 @@ class DownloadManager(QObject):
                 'type': request_type,
                 'config': self.main_window.config
             }
-
             task = DownloadTask(task_items, self.main_window.config.get('concurrency', 8))
             with QMutexLocker(self.mutex):
                 self.tasks.append(task)
@@ -940,6 +904,7 @@ class DownloadManager(QObject):
             worker = DownloadWorker(task)
             task.finished.connect(self._handle_task_completion)
             task.error_occurred.connect(self._handle_task_error)
+            task.db_update.connect(self.db_update.emit)
 
             task.start_download() # Change task's internal status to 'Downloading'
 
@@ -1018,7 +983,6 @@ class DownloadManager(QObject):
         )
         with QMutexLocker(self.mutex):
             self.queue_updated.emit(self._get_current_tasks_data())
-            self.task_finished.emit(task)
         self.process_queue() # Try to start next queued download
 
 
@@ -1127,9 +1091,7 @@ class DownloadManager(QObject):
         self._cleanup_task(task)
         with QMutexLocker(self.mutex):
             self.tasks.remove(task)
-        with db.DB_LOCK:
-            db.execute("DELETE FROM downloads WHERE id = ?", task.id)
-            db.commit()
+        self.db_delete.emit(task.id)
 
     def set_max_speed(self):
         """

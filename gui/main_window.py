@@ -5,11 +5,11 @@ from PySide6.QtWidgets import ( QApplication, QFileDialog,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView,
     QSizePolicy
 )
-from PySide6.QtCore import Qt, Slot, QThread, QTimer, QSize, QPoint
+from PySide6.QtCore import Qt, Slot, QThread, QTimer, QSize, QPoint, Signal
 from PySide6.QtGui import QAction, QIcon, QBrush, QColor
 
 from network.server_thread import ServerThread
-from network.download_thread import DownloadManager
+from network.download_thread import DownloadManager, DownloadTask
 from gui.download_popup import DownloadPopup
 from gui.config_popup import ConfigPopup
 from gui.menu import DownloadContext
@@ -20,20 +20,28 @@ from utils.helpers import (
 from utils.constants import DEFAULT_CONFIG, CONFIG_DIRECTORY
 from utils import db
 
-import os, json, logging
+import os, json, logging, traceback
 from logging.handlers import RotatingFileHandler
 
 
 class MainWindow(QMainWindow):
+    threadReady = Signal()
+    addDownload = Signal(dict)
+    delDownload = Signal(DownloadTask)
+
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Nadeko~don")
-        self.setGeometry(100, 100, 800, 500)
-        self.config_dir = CONFIG_DIRECTORY
-        self.setup_config()
-        self.init_ui()
-        self.setup_system_tray()
-        self.show()
+        try:
+            self.setWindowTitle("Nadeko~don")
+            self.setGeometry(100, 100, 800, 500)
+            self.config_dir = CONFIG_DIRECTORY
+            self.setup_config()
+            self.init_ui()
+            self.setup_system_tray()
+            self.show()
+        except Exception as e:
+            traceback.print_exc()
+            raise
 
     def init_ui(self):
         # Central widget and layout
@@ -177,7 +185,7 @@ class MainWindow(QMainWindow):
             self.download_table.setItem(row, 3, speed_item)
             self.download_table.setItem(row, 4, eT_item)
 
-        # self.handle_updateTableClicked(self.download_table.selectedRanges())
+        self.handle_updateTableClicked()
         self.status_bar.showMessage(f"▼ {format_bytes(speed_sum)}/s")
 
     def setup_config(self):
@@ -216,9 +224,6 @@ class MainWindow(QMainWindow):
         self.server.url_received.connect(self.handle_received_url)
         self.server.start()
 
-        # Setup database
-        db.build()
-
         # Setup download manager in a separate QThread
         self.download_manager = DownloadManager(self)
         # Connect to the update_download_table slot, which now expects list data
@@ -228,10 +233,16 @@ class MainWindow(QMainWindow):
         self.download_manager.moveToThread(self.download_manager_thread)
         self.download_manager_thread.start()
 
+        # Setup download database
+        self.db_thread = QThread()
+        self.db_manager = db.DownloadDB(self)
+
         # Timer to periodically refresh the download table UI
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(lambda: self.download_manager._update_table())
         self.refresh_timer.start(1000) # In milisec
+
+        self.threadReady.emit()
 
     def setup_system_tray(self):
         self.sys_tray = QSystemTrayIcon(self)
@@ -285,17 +296,6 @@ class MainWindow(QMainWindow):
         """Central error handler for issues encountered during download or info fetching."""
         self.download_button.setEnabled(True) # Re-enable main download button on error
         self.logger.error(message) # Log the error
-
-    def change_directory(self):
-        """Allows the user to change the default download directory."""
-        directory = QFileDialog.getExistingDirectory(
-            self,
-            "Select Download Directory",
-            self.config['save_path']
-        )
-        if directory:
-            self.config['save_path'] = directory
-            self.update_config()
 
     def handle_updateTableClicked(self, selected=None, deselected=None):
         """
@@ -404,7 +404,7 @@ class MainWindow(QMainWindow):
             if os.path.exists(path) and option.clickedButton() == delAll:
                 os.remove(path)
             if option.clickedButton() == delAll or option.clickedButton() == removeOnly:
-                self.download_manager.remove_download(task)
+                self.delDownload.emit(task)
 
 
     def show_contextMenu(self, pos:QPoint):

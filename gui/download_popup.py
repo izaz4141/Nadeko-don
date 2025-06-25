@@ -421,7 +421,7 @@ class DownloadPopup(QDialog):
 
         # Proceed with adding download if not cancelled or if overwrite was successful
         if self.download_request:
-            self.main_window.download_manager.add_download(self.download_request)
+            self.main_window.addDownload.emit(self.download_request)
             self.finished.emit()
             self.close()
 
