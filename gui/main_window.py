@@ -62,7 +62,8 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.stop_action)
 
         self.delete_action = QAction(
-            QIcon(self.style().standardIcon(QStyle.SP_TrashIcon)),
+            QIcon.fromTheme('delete', 
+                QIcon(self.style().standardIcon(QStyle.SP_TrashIcon))) ,
             "Delete", self
         )
         self.delete_action.setEnabled(False)
@@ -74,7 +75,8 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(spacer)
 
         config_action = QAction(
-            QIcon(resource_path("assets/settings.svg")),
+            QIcon.fromTheme('settings', 
+                QIcon(resource_path("assets/settings.svg"))) ,
             "Settings", self
         )
         config_action.triggered.connect(self.handle_config)
@@ -86,11 +88,12 @@ class MainWindow(QMainWindow):
         url_layout.addWidget(QLabel("URL:"))
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("Enter URL...")
+        self.url_input.setClearButtonEnabled(True)
         url_layout.addWidget(self.url_input)
         layout.addLayout(url_layout)
 
-        self.download_button = QPushButton("Download")
-        self.download_button.setMaximumWidth(120)
+        self.download_button = QPushButton("+ Add Download")
+        # self.download_button.setMaximumWidth(120)
         self.download_button.clicked.connect(self.handle_download)
         url_layout.addWidget(self.download_button)
 

@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt, Slot, QThread, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QPixmap, QIcon
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QComboBox, QPushButton, QLabel, QDialog, QLineEdit,
@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 )
 
 from utils.helpers import (
-    get_url_info,
+    get_url_info, shorten_path,
     is_urlDownloadable, format_bytes
 )
 from network.ydl_thread import YTDL_Thread
@@ -52,7 +52,7 @@ class DownloadPopup(QDialog):
 
         side_layout = QVBoxLayout()
 
-        self.saveDir_button = QPushButton(self.main_window.config['save_path'])
+        self.saveDir_button = QPushButton(shorten_path(self.main_window.config['save_path']))
         self.saveDir_button.clicked.connect(self.handle_changeDir)
         side_layout.addWidget(self.saveDir_button)
 
@@ -96,7 +96,12 @@ class DownloadPopup(QDialog):
         sub_layout.addLayout(side_layout)
         main_layout.addLayout(sub_layout)
 
-        self.download_button = QPushButton("Download")
+        self.download_button = QPushButton()
+        icon = QIcon.fromTheme('download')
+        if icon:
+            self.download_button.setIcon(icon)
+        else:
+            self.download_button.setText("Download")
         self.download_button.setEnabled(False)
         self.download_button.clicked.connect(self.handle_download)
         main_layout.addWidget(self.download_button)

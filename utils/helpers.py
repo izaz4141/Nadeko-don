@@ -18,6 +18,19 @@ def resource_path(relative_path):
     
     return str(base_path / relative_path)
 
+def shorten_path(full_path):
+  """
+  Changes a full path like '/home/user/downloads' to '~/downloads'.
+  """
+  home_dir = os.path.expanduser('~')
+
+  # Check if the full_path starts with the home directory.
+  if full_path.startswith(home_dir):
+    return full_path.replace(home_dir, '~', 1) # Use count=1 to replace only the first occurrence
+  else:
+    # If the path doesn't start with the home directory, return it as is.
+    return full_path
+
 def format_durasi(durasi: int) -> str:
     durasi = int(durasi)
     donat = durasi
