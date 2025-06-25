@@ -33,7 +33,7 @@ a = Analysis(
         "tkinter", "unittest", "pydoc",
         "setuptools", "distutils", "test", "tomllib",
         "multiprocessing", "pkg_resources",
-        "xmlrpc", "lib2to3", "sqlite3",
+        "xmlrpc", "lib2to3",
         "matplotlib", "scipy", "numpy", "pandas", "PIL", "torch", "tensorflow", "cv2",
         "cryptography"
     ],

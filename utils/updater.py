@@ -8,48 +8,122 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 GITHUB_REPO_OWNER = "izaz4141"
 GITHUB_REPO_NAME = "Nadeko-don"
 
-def get_latest_github_release_info() -> dict | None:
+def get_platform_app_name() -> str:
     """
-    Fetches the latest release information from a GitHub repository.
-    Returns a dictionary containing 'tag_name' (version) and 'download_url' for the asset,
-    or None if an error occurs or no suitable asset is found.
+    Determines the expected application name based on the operating system.
     """
-    api_url = f"https://api.github.com/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/releases/latest"
+    if sys.platform == 'win32':
+        return 'nadeko-don.exe'
+    elif sys.platform == 'linux':
+        return 'nadeko-don'
+    # Add more platforms if needed, or default to a common name
+    else:
+        # Fallback for other operating systems, or raise an error if not supported
+        return 'unknown' # Example for a generic name
+
+def fetch_release_info(release_data: dict) -> dict | None:
+    """
+    Extracts tag_name and the appropriate download_url from a single release's data.
+    """
+    latest_tag = release_data.get("tag_name")
+    download_url = None
+    app_name = get_platform_app_name()
+
+    for asset in release_data.get("assets", []):
+        if asset.get("name") == app_name:
+            download_url = asset.get("browser_download_url")
+            break
+
+    if latest_tag and download_url:
+        return {"tag_name": latest_tag, "download_url": download_url}
+    return None
+
+def get_all_github_releases() -> list[dict]:
+    """
+    Fetches all releases from a GitHub repository, handling pagination.
+    Returns a list of release dictionaries.
+    """
+    all_releases = []
+    page = 1
     headers = {"Accept": "application/vnd.github.v3+json"}
 
-    if sys.platform == 'win32':
-        app_name = 'nadeko-don.exe'
-    elif sys.platform == 'linux':
-        app_name = 'nadeko-don'
-    else:
-        app_name = 'unknown'
+    while True:
+        api_url = (
+            f"https://api.github.com/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/releases"
+            f"?per_page=100&page={page}" # GitHub API default per_page is 30, max is 100
+        )
+        response = requests.get(api_url, headers=headers)
+        response.raise_for_status()
+        releases_page = response.json()
+
+        if not releases_page:
+            # No more releases on this page, stop fetching
+            break
+
+        all_releases.extend(releases_page)
+        page += 1
+
+    return all_releases
+
+def get_github_release_info() -> dict | None:
+    """
+    Fetches release information from a GitHub repository.
+    First tries to get the latest release. If a suitable asset is not found,
+    it then iterates through all releases from newest to oldest.
+
+    Returns a dictionary containing 'tag_name' (version) and 'download_url' for the asset,
+    or None if an error occurs or no suitable asset is found after checking all releases.
+    """
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    app_name = get_platform_app_name() # Get the app name once
+    if app_name == 'unknown':
+        return None
+
+    print(f"Attempting to find release for app: '{app_name}' on OS: '{sys.platform}'")
 
     try:
-        response = requests.get(api_url, headers=headers)
-        response.raise_for_status() # Raises an HTTPError for bad responses (4xx or 5xx)
-        release_info = response.json()
+        # 1. Try to fetch the very latest release directly
+        latest_release_url = (
+            f"https://api.github.com/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/releases/latest"
+        )
+        print(f"Checking latest release from: {latest_release_url}")
+        response = requests.get(latest_release_url, headers=headers)
+        response.raise_for_status()
+        latest_release_info = response.json()
 
-        latest_tag = release_info.get("tag_name")
-        download_url = None
+        result = fetch_release_info(latest_release_info)
+        if result:
+            print(f"Found suitable asset in latest release: {result['tag_name']}")
+            return result
 
-        # Find the correct asset to download (your compiled executable)
-        for asset in release_info.get("assets", []):
-            # Check if the asset name matches the dynamically determined executable name
-            if asset.get("name") == app_name:
-                download_url = asset.get("browser_download_url")
-                break
+        print("Suitable asset not found in the very latest release. Checking all releases.")
 
-        if latest_tag and download_url:
-            return {"tag_name": latest_tag, "download_url": download_url}
-        else:
-            raise Exception(f"Could not find latest tag or executable asset '{app_name}' for OS '{sys.platform}'.")
+        # 2. If the latest release doesn't have the asset, fetch all releases
+        all_releases = get_all_github_releases()
+        if not all_releases:
+            print("No releases found for the repository.")
             return None
+
+        # Iterate through all releases from newest to oldest
+        # GitHub API usually returns releases in reverse chronological order by default,
+        # but explicit iteration ensures this.
+        for release in all_releases:
+            release_result = fetch_release_info(release)
+            if release_result:
+                print(f"Found suitable asset in release: {release_result['tag_name']}")
+                return release_result
+
+        print(f"No suitable asset '{app_name}' found across all releases for OS '{sys.platform}'.")
+        return None
 
     except requests.exceptions.RequestException as e:
         raise Exception(f"Error fetching GitHub release info: {e}")
         return None
     except json.JSONDecodeError as e:
         raise Exception(f"Error parsing JSON response: {e}")
+        return None
+    except Exception as e:
+        raise Exception(f"An unexpected error occurred: {e}")
         return None
 
 def check_for_updates(current_version: str, logger):
@@ -59,7 +133,7 @@ def check_for_updates(current_version: str, logger):
     """
     release_info = None
     try:
-        release_info = get_latest_github_release_info()
+        release_info = get_github_release_info()
     except Exception as e:
         logger.error(e)
 
@@ -75,10 +149,10 @@ def check_for_updates(current_version: str, logger):
         latest_version = parse_version(latest_version_str.lstrip('vV'))
 
         if latest_version > current_version:
-            return True, f"v{current_version}: v{latest_version} is available", download_url
+            return True, f"v{current_version} (v{latest_version} is available)", download_url
 
         else:
-            return False, f"v{current_version}: Already on latest", None
+            return False, f"v{current_version} (Already on latest)", None
     except Exception as e:
         logger.error(f"v{current_version}: [ERROR] {e}")
         return False, f"v{current_version}: [ERROR] {e}", None

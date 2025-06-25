@@ -7,7 +7,7 @@ from gui.main_window import MainWindow
 from utils.helpers import resource_path
 
 APP_NAME = "Nadeko~don"
-__version__ = "2.2.0"
+APP_VERSION = "2.3.0"
 
 
 if __name__ == "__main__":
@@ -18,7 +18,7 @@ if __name__ == "__main__":
 
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
-    app.setApplicationVersion(__version__)
+    app.setApplicationVersion(APP_VERSION)
     app.setWindowIcon(QIcon(resource_path("assets/nadeko-don.png")))
 
     socket = QLocalSocket()
