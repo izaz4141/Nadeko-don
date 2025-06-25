@@ -1,6 +1,8 @@
 import re, requests, os, sys
-from urllib.parse import urlparse, unquote
 from pathlib import Path
+from urllib.parse import urlparse, unquote
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and PyInstaller """
@@ -87,6 +89,22 @@ def extract_size_info(s):
         return (match.group(1), match.group(2))
     return (None, None)
 
+def create_session(methods: list):
+    """
+    Creates a requests.Session with a retry strategy for robust HTTP requests.
+    """
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=5,
+        backoff_factor=10,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=methods
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
 def get_url_info(url):
     try:
         response = requests.head(url, allow_redirects=True, timeout=10)
@@ -108,8 +126,12 @@ def get_url_info(url):
             
         return int(content_length), filename
     except Exception as e:
-        raise e
         return None
+
+def get_existing_size(path):
+    """Returns the size of an existing file at save_path, or 0 if it doesn't exist."""
+    size = os.path.getsize(path) if os.path.exists(path) else 0
+    return size
 
 def is_urlDownloadable(url):
     try:
