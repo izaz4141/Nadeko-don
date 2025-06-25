@@ -11,7 +11,7 @@ from utils.helpers import (
     create_session
 )
 from utils.timer import ProgressTimer
-from utils import db
+from network.db import row_to_dict
 
 import os, time, requests, subprocess, threading, math, json, uuid
 from collections import deque
@@ -760,7 +760,7 @@ class DownloadManager(QObject):
         if not all_data:
             return
         for data in all_data:
-            data = db._row_to_dict(data)
+            data = row_to_dict(data)
             task = DownloadTask.from_dict(data)
             self.tasks.append(task)
 
@@ -937,6 +937,37 @@ class DownloadManager(QObject):
         This slot is executed on the GUI thread in response to a worker signal.
         It cleans up the task and notifies the user via system tray.
         """
+        self._cleanup_task(task)
+        self._show_tray_notification(
+            "Download Complete",
+            f"{task.basename} downloaded successfully!",
+            QSystemTrayIcon.MessageIcon.Information
+        )
+        with QMutexLocker(self.mutex):
+            self.queue_updated.emit(self._get_current_tasks_data())
+        self.process_queue() # Try to start next queued download
+
+
+    @Slot(QObject, str)
+    def _handle_task_error(self, task: QObject, error_message: str):
+        """
+        Slot to handle a DownloadTask reporting an error.
+        This slot is executed on the GUI thread in response to a worker signal.
+        It cleans up the task and notifies the user about the error.
+        """
+        self.main_window.logger.error(f"DownloadManager: Task '{task.basename}' reported an error: {error_message}")
+        self._cleanup_task(task) # Clean up task from manager's lists
+        self._show_tray_notification(
+            "Download Failed",
+            f"{task.basename} failed to download!",
+            QSystemTrayIcon.MessageIcon.Critical
+        )
+
+        with QMutexLocker(self.mutex):
+            self.queue_updated.emit(self._get_current_tasks_data())
+        self.process_queue() # Try to start next queued download
+
+    def _handle_ytdl_complete(self):
         if task.items['type'] == 'ytdl' and 'batch_id' in task.items:
             all_finished = True
             for t in self.batches[task.items['batch_id']]:
@@ -973,38 +1004,6 @@ class DownloadManager(QObject):
                 with QMutexLocker(self.mutex):
                     self.tasks.append(nt)
                     del self.batches[task.items['batch_id']]
-                
-
-        self._cleanup_task(task)
-        self._show_tray_notification(
-            "Download Complete",
-            f"{task.basename} downloaded successfully!",
-            QSystemTrayIcon.MessageIcon.Information
-        )
-        with QMutexLocker(self.mutex):
-            self.queue_updated.emit(self._get_current_tasks_data())
-        self.process_queue() # Try to start next queued download
-
-
-    @Slot(QObject, str)
-    def _handle_task_error(self, task: QObject, error_message: str):
-        """
-        Slot to handle a DownloadTask reporting an error.
-        This slot is executed on the GUI thread in response to a worker signal.
-        It cleans up the task and notifies the user about the error.
-        """
-        self.main_window.logger.error(f"DownloadManager: Task '{task.basename}' reported an error: {error_message}")
-        self._cleanup_task(task) # Clean up task from manager's lists
-        self._show_tray_notification(
-            "Download Failed",
-            f"{task.basename} failed to download!",
-            QSystemTrayIcon.MessageIcon.Critical
-        )
-
-        with QMutexLocker(self.mutex):
-            self.queue_updated.emit(self._get_current_tasks_data())
-        self.process_queue() # Try to start next queued download
-
 
     def _cleanup_task(self, task: DownloadTask):
         """

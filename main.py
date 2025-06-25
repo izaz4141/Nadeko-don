@@ -14,7 +14,7 @@ if __name__ == "__main__":
     if hasattr(sys, '_MEIPASS'):
         plugin_path = os.path.join(sys._MEIPASS, 'plugins')
         os.environ['QT_PLUGIN_PATH'] = plugin_path
-        os.environ['QT_LOGGING_RULES'] = "qt.qpa.wayland.*.warning=false"
+    os.environ['QT_LOGGING_RULES'] = "qt.qpa.wayland.*.warning=false"
 
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)

@@ -46,7 +46,7 @@ def scriptexec(cur, script):
     cur.executescript(script)
 
 
-def _row_to_dict(row: Row) -> dict:
+def row_to_dict(row: Row) -> dict:
     """Converts a SQLite row object to a dictionary, handling type conversions for the new schema."""
     task_dict = dict(row)
     task_items = task_dict.items()

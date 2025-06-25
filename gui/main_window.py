@@ -10,6 +10,7 @@ from PySide6.QtGui import QAction, QIcon, QBrush, QColor
 
 from network.server_thread import ServerThread
 from network.download_thread import DownloadManager, DownloadTask
+from network.db import DownloadDB
 from gui.download_popup import DownloadPopup
 from gui.config_popup import ConfigPopup
 from gui.menu import DownloadContext
@@ -18,7 +19,6 @@ from utils.helpers import (
     check_default, format_durasi
 )
 from utils.constants import DEFAULT_CONFIG, CONFIG_DIRECTORY
-from utils import db
 
 import os, json, logging, traceback
 from logging.handlers import RotatingFileHandler
@@ -235,7 +235,10 @@ class MainWindow(QMainWindow):
 
         # Setup download database
         self.db_thread = QThread()
-        self.db_manager = db.DownloadDB(self)
+        self.db_thread.setObjectName("DBManagerThread")
+        self.db_manager = DownloadDB(self)
+        self.db_manager.moveToThread(self.db_thread)
+        self.db_thread.start()
 
         # Timer to periodically refresh the download table UI
         self.refresh_timer = QTimer()
@@ -454,5 +457,7 @@ class MainWindow(QMainWindow):
         self.download_manager.shutdown()
         self.download_manager_thread.exit()
         self.download_manager_thread.wait(2000)
+        self.db_thread.exit()
+        self.db_thread.wait(2000)
         self.sys_tray.hide()
         QApplication.quit()
