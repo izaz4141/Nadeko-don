@@ -255,8 +255,8 @@ class MainWindow(QMainWindow):
         self.sys_tray.activated.connect(self.on_tray_activated)
 
         tray_menu = QMenu()
-        show_action = tray_menu.addAction("Show")
-        quit_action = tray_menu.addAction("Quit")
+        show_action = tray_menu.addAction(self.style().standardIcon(QStyle.SP_TitleBarMaxButton), " Show")
+        quit_action = tray_menu.addAction(self.style().standardIcon(QStyle.SP_TitleBarCloseButton), " Quit")
 
         show_action.triggered.connect(self.show_window)
         quit_action.triggered.connect(self.quit_app)
