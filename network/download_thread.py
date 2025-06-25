@@ -937,6 +937,7 @@ class DownloadManager(QObject):
         This slot is executed on the GUI thread in response to a worker signal.
         It cleans up the task and notifies the user via system tray.
         """
+        self._handle_ytdl_complete(task)
         self._cleanup_task(task)
         self._show_tray_notification(
             "Download Complete",
@@ -949,7 +950,7 @@ class DownloadManager(QObject):
 
 
     @Slot(QObject, str)
-    def _handle_task_error(self, task: QObject, error_message: str):
+    def _handle_task_error(self, task: DownloadTask, error_message: str):
         """
         Slot to handle a DownloadTask reporting an error.
         This slot is executed on the GUI thread in response to a worker signal.
@@ -967,7 +968,7 @@ class DownloadManager(QObject):
             self.queue_updated.emit(self._get_current_tasks_data())
         self.process_queue() # Try to start next queued download
 
-    def _handle_ytdl_complete(self):
+    def _handle_ytdl_complete(self, task: DownloadTask):
         if task.items['type'] == 'ytdl' and 'batch_id' in task.items:
             all_finished = True
             for t in self.batches[task.items['batch_id']]:
