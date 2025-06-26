@@ -19,7 +19,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
-    app.setWindowIcon(QIcon(resource_path("assets/nadeko-don.png")))
+    app.setWindowIcon(QIcon(resource_path("assets/icons/nadeko-don.png")))
 
     socket = QLocalSocket()
     socket.connectToServer(APP_NAME)

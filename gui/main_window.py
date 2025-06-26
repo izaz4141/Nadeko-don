@@ -84,7 +84,7 @@ class MainWindow(QMainWindow):
 
         config_action = QAction(
             QIcon.fromTheme('settings', 
-                QIcon(resource_path("assets/settings.svg"))) ,
+                QIcon(resource_path("assets/icons/settings.svg"))) ,
             "Settings", self
         )
         config_action.triggered.connect(self.handle_config)
@@ -101,7 +101,8 @@ class MainWindow(QMainWindow):
         layout.addLayout(url_layout)
 
         self.download_button = QPushButton("+ Add Download")
-        # self.download_button.setMaximumWidth(120)
+        self.download_button.setDefault(True)
+        self.download_button.setAutoDefault(True)
         self.download_button.clicked.connect(self.handle_download)
         url_layout.addWidget(self.download_button)
 
@@ -121,10 +122,8 @@ class MainWindow(QMainWindow):
         table_header.setSectionResizeMode(0, QHeaderView.Stretch)
         table_header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         table_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        table_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        table_header.setSectionResizeMode(3, QHeaderView.Interactive)
 
-        # Initial call to update table is no longer needed here as the download manager will send initial data
-        # self.update_download_table()
         layout.addWidget(self.download_table)
 
         # Status bar
@@ -249,7 +248,7 @@ class MainWindow(QMainWindow):
 
     def setup_system_tray(self):
         self.sys_tray = QSystemTrayIcon(self)
-        self.sys_tray.setIcon(QIcon(resource_path('assets/nadeko-don.png')))
+        self.sys_tray.setIcon(QIcon(resource_path('assets/icons/nadeko-don.png')))
         self.sys_tray.setToolTip("Nadeko~don\nA GUI for YT-DLP")
 
         self.sys_tray.activated.connect(self.on_tray_activated)
@@ -294,11 +293,6 @@ class MainWindow(QMainWindow):
         self.popup = DownloadPopup(self, url)
         self.popup.finished.connect(self.popup.deleteLater)
         self.popup.show()
-
-    def handle_error(self, message):
-        """Central error handler for issues encountered during download or info fetching."""
-        self.download_button.setEnabled(True) # Re-enable main download button on error
-        self.logger.error(message) # Log the error
 
     def handle_updateTableClicked(self, selected=None, deselected=None):
         """
@@ -387,9 +381,15 @@ class MainWindow(QMainWindow):
         
         tasks = []
         for ran in self.download_table.selectedRanges():
-            row = ran.topRow()
-            task = self.download_manager.tasks[row]
-            tasks.append((task.save_path, self.download_manager.tasks[row]))
+            top = ran.topRow()
+            bottom = ran.bottomRow()
+            if top == bottom:
+                task = self.download_manager.tasks[top]
+                tasks.append((task.save_path, task))
+            else:
+                for i in range(top, bottom+1):
+                    task = self.download_manager.tasks[i]
+                    tasks.append((task.save_path, task))
 
         option = QMessageBox(self)
         option.setText(f"Delete the selected file and remove it from the list? ")

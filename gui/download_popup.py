@@ -103,6 +103,7 @@ class DownloadPopup(QDialog):
         else:
             self.download_button.setText("Download")
         self.download_button.setEnabled(False)
+        self.download_button.setDefault(True)
         self.download_button.clicked.connect(self.handle_download)
         main_layout.addWidget(self.download_button)
 

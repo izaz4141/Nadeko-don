@@ -45,6 +45,8 @@ class ConfigPopup(QDialog):
         saveDir_label.setToolTip(shorten_path(self.main_window.config['save_path']))
         saveDir_section.addWidget(saveDir_label, 90)
         self.saveDir_input = QPushButton()
+        self.saveDir_input.setAutoDefault(True)
+        self.saveDir_input.setToolTip("Change default download folder")
         self.saveDir_input.setIcon(self.main_window.style().standardIcon(QStyle.SP_DirOpenIcon))
         self.saveDir_input.clicked.connect(lambda: self.handle_changeDir('save_path'))
         saveDir_section.addWidget(self.saveDir_input, 10)
@@ -87,6 +89,8 @@ class ConfigPopup(QDialog):
         ytCookies_label.setToolTip("Path to youtube cookie text file used for yt-dlp")
         ytCookies_section.addWidget(ytCookies_label, 90)
         self.ytCookies_input = QPushButton()
+        self.ytCookies_input.setAutoDefault(True)
+        self.ytCookies_input.setToolTip("Set path to youtube cookie file")
         self.ytCookies_input.setIcon(self.main_window.style().standardIcon(QStyle.SP_DirOpenIcon))
         self.ytCookies_input.clicked.connect(lambda: self.handle_changeDir('yt_cookies'))
         ytCookies_section.addWidget(self.ytCookies_input, 10)
@@ -109,6 +113,7 @@ class ConfigPopup(QDialog):
 
         ok_button = QPushButton()
         ok_button.setIcon(self.main_window.style().standardIcon(QStyle.SP_DialogOkButton))
+        ok_button.setDefault(True)
         ok_button.clicked.connect(self.handle_finished)
         main_layout.addWidget(ok_button)
 

@@ -1,12 +1,10 @@
-# Nadeko~don 
+# ![Extension Icon](assets/icons/nadeko-don-48.png) Nadeko~don 
 
-![Extension Icon](assets/nadeko-don.png)
+![Main Window](assets/preview/main.jpg)
 
-
-Downloader built with QT
 
 ## Overview
-This solution provides a robust desktop application with browser integration capabilities, enabling streamlined downloading of video content from various web sources.
+Dowload Manager built with QT
 
 
 ## Features
@@ -45,11 +43,12 @@ pyinstaller build.spec
 
 ## Development Roadmap
 
-1. Enhanced UI/UX with professional styling and dark/light themes
-2. Automatic update mechanism
-3. Download progress visualization and analytics
-4. Dynamic download part configuration during transfers
-5. Download scheduling and queue management
+1. ~~Enhanced UI/UX with professional styling and dark/light themes~~
+2. Improve UI with customizable themes (using qtct) ✅
+3. Automatic update mechanism ✅
+4. Download progress, details, visualization and analytics
+5. Dynamic download part configuration during transfers
+6. Download scheduling and queue management
 
 ## Browser Extensions
 
