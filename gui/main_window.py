@@ -137,7 +137,6 @@ class MainWindow(QMainWindow):
         This method is a slot connected to DownloadManager.queue_updated signal.
         """
         self.download_table.setRowCount(len(tasks_data))
-        speed_sum = 0
 
         for row, task in enumerate(tasks_data): # Iterate directly over the received data
             # Basename column
@@ -170,7 +169,6 @@ class MainWindow(QMainWindow):
             speed_bytes = get_speed(task['history'])
             speed_item = QTableWidgetItem(f"{format_bytes(speed_bytes)}/s")
             speed_item.setTextAlignment(Qt.AlignCenter)
-            speed_sum += speed_bytes
 
             # Elapsed time column
             elapsed_time = task['timer'].get_elapsedTime()
@@ -185,6 +183,10 @@ class MainWindow(QMainWindow):
             self.download_table.setItem(row, 4, eT_item)
 
         self.handle_updateTableClicked()
+
+        speed_sum = 0
+        for worker in self.download_manager.active_tasks.values():
+            speed_sum += get_speed(worker.task.history)
         self.status_bar.showMessage(f"▼ {format_bytes(speed_sum)}/s")
 
     def setup_config(self):
@@ -225,7 +227,6 @@ class MainWindow(QMainWindow):
 
         # Setup download manager in a separate QThread
         self.download_manager = DownloadManager(self)
-        # Connect to the update_download_table slot, which now expects list data
         self.download_manager.queue_updated.connect(self.update_download_table)
         self.download_manager_thread = QThread()
         self.download_manager_thread.setObjectName("DownloadManagerThread")
@@ -455,9 +456,9 @@ class MainWindow(QMainWindow):
         """Performs a graceful shutdown of all threads and the application."""
         self.server.stop()
         self.download_manager.shutdown()
-        self.download_manager_thread.exit()
-        self.download_manager_thread.wait(2000)
-        self.db_thread.exit()
-        self.db_thread.wait(2000)
+        self.download_manager_thread.quit()
+        self.download_manager_thread.wait()
+        self.db_thread.quit()
+        self.db_thread.wait()
         self.sys_tray.hide()
         QApplication.quit()

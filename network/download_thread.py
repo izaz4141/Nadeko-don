@@ -41,6 +41,7 @@ class DownloadTask(QObject):
         """
         super().__init__()
         self.id = uuid.uuid4().hex
+        self.start_time = time.time()
         self.items = items
         self.url = items['url']
         self.save_path = items['path']
@@ -205,9 +206,8 @@ class DownloadTask(QObject):
         """
         if self.status == "Completed":
             return
-        if not self.timer.start_time:
-            self.timer.start()
-            self.start_time  = time.time()
+        self.timer.start()
+        
         try:
             self.insert_database(self.to_dict())
             self._download_url()
@@ -299,7 +299,7 @@ class DownloadTask(QObject):
             thread.start()
 
         last_save_time = time.time()
-        save_interval = 1
+        save_interval = 5
 
         # Main loop to monitor part threads and handle global pause/cancel events.
         while True:
@@ -309,16 +309,13 @@ class DownloadTask(QObject):
             if failed_parts:
                 raise Exception(f"{len(failed_parts)} part(s) failed to download. Errors: {'; '.join(p.get('error', 'Unknown') for p in failed_parts)}")
             
-            if self._canceled.is_set():
-                self._save_metadata()
-                self.insert_database(self.to_dict())
-                break
-
-            if self._paused.is_set():
+            if self._paused.is_set() or self._canceled.is_set():
                 self._save_metadata()
                 self.insert_database(self.to_dict())
                 with self.condition:
-                    while self._paused.is_set() and not self._canceled.is_set():
+                    while self._paused.is_set() or self._canceled.is_set():
+                        if self._canceled.is_set():
+                            return
                         self.condition.wait()
 
             current_time = time.time()
@@ -473,8 +470,7 @@ class DownloadTask(QObject):
             # - Cap the number of parts at the maximum allowed connections.
             ideal_parts_by_size = max(1, math.ceil(self.total_size / min_part_size))
             self.num_parts = min(self.max_connections, ideal_parts_by_size)
-
-            if self.metadata and 'parts' in self.metadata and self.metadata.get('total_size') == self.total_size:
+            if self.metadata and 'parts' in self.metadata and self.metadata.get('num_parts') == self.num_parts:
                 # Resume multi-threaded download from existing metadata
                 self.part_info = self.metadata['parts']
                 self.completed_parts = sum(1 for p in self.part_info if p['status'] == 'complete')
@@ -764,7 +760,6 @@ class DownloadManager(QObject):
         for data in all_data:
             data = row_to_dict(data)
             task = DownloadTask.from_dict(data)
-            print(task.items)
             self.tasks.append(task)
 
         self.process_queue()
