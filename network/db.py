@@ -77,12 +77,13 @@ class DownloadDB(QObject):
     def insert_or_update(self, task_data:dict):
         sql = """
             INSERT INTO downloads (
-                id, items, downloaded, total_size, timer, metadata, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                id, start_time, downloaded, total_size, items, timer, metadata, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
-                items=excluded.items,
+                start_time=excluded.start_time,
                 downloaded=excluded.downloaded,
                 total_size=excluded.total_size,
+                items=excluded.items,
                 timer=excluded.timer,
                 metadata=excluded.metadata,
                 status=excluded.status
@@ -91,9 +92,10 @@ class DownloadDB(QObject):
             with self.db_lock:
                 execute(self.cur, sql, 
                     task_data['id'],
-                    json.dumps(task_data['items']), # Store dict as JSON string
+                    task_data['start_time'],
                     task_data['downloaded'],
                     task_data['total_size'],
+                    json.dumps(task_data['items']), # Store dict as JSON string
                     json.dumps(task_data['timer']), # Store timer dict as JSON string
                     json.dumps(task_data['metadata']),
                     task_data['status']

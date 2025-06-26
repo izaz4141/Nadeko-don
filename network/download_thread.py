@@ -52,7 +52,7 @@ class DownloadTask(QObject):
         self.total_size = 0
         self.timer = ProgressTimer()
         self.history = deque(maxlen=10)
-        self.metadata = {}
+        self.metadata = {'history': list(self.history)}
 
         self._paused = threading.Event()
         self._canceled = threading.Event()
@@ -77,9 +77,10 @@ class DownloadTask(QObject):
         with QMutexLocker(self.mutex):
             return {
                 'id': self.id,
-                'items': self.items, 
+                'start_time': self.start_time,
                 'downloaded': self.downloaded,
                 'total_size': self.total_size,
+                'items': self.items, 
                 'timer': self.timer.to_dict(),
                 'metadata': self.metadata,
                 'status': self.status
@@ -96,6 +97,7 @@ class DownloadTask(QObject):
 
         # Populate persistent attributes
         task.id = data['id']
+        task.start_time = data['start_time']
         task.downloaded = data['downloaded']
         task.total_size = data['total_size']
         task.timer = ProgressTimer.from_dict(data['timer'])
@@ -205,6 +207,7 @@ class DownloadTask(QObject):
             return
         if not self.timer.start_time:
             self.timer.start()
+            self.start_time  = time.time()
         try:
             self.insert_database(self.to_dict())
             self._download_url()
@@ -545,10 +548,9 @@ class DownloadTask(QObject):
     def _save_metadata(self):
         """Saves download metadata (especially part info for multi-threaded) to a file for resuming."""
         self.metadata = {
-            'total_size': self.total_size,
             'num_parts': len(self.part_info),
             'parts': self.part_info,
-            'downloaded': self.downloaded,
+            'history': list(self.history),
             'timestamp': time.time()
         }
 
@@ -762,6 +764,7 @@ class DownloadManager(QObject):
         for data in all_data:
             data = row_to_dict(data)
             task = DownloadTask.from_dict(data)
+            print(task.items)
             self.tasks.append(task)
 
         self.process_queue()
@@ -778,7 +781,7 @@ class DownloadManager(QObject):
                 'path': task.save_path,
                 'status': task.status,
                 'timer': task.timer,
-                'history': list(task.history) # Send a copy of history
+                'history': list(task.metadata['history'])
             })
         return tasks_data
 

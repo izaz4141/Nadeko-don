@@ -14,6 +14,7 @@ DEFAULT_CONFIG = {
 SQL_BUILD = """
 CREATE TABLE IF NOT EXISTS downloads (
     id TEXT PRIMARY KEY,
+    start_time REAL,
     downloaded INTEGER,
     total_size INTEGER,
     items TEXT NOT NULL,
